@@ -1,0 +1,5 @@
+.idea/
+bags/
+*.pyc
+*.npy
+*.mp4
