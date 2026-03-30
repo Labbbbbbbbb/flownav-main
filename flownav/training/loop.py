@@ -10,8 +10,8 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from flownav.training.evaluate import evaluate
-from flownav.training.train import train
-#from meanflow.train import train
+#from flownav.training.train import train
+from meanflow.train import train
 
 
 def main_loop(
