@@ -14,16 +14,6 @@ Usage:
     output = model(sample=z, timestep=t, stoptime=h, global_cond=obs_cond)
 """
 
-import sys
-import os
-
-# Add consistency-policy to path for imports
-_consistency_policy_path = os.path.join(
-    os.path.dirname(__file__), "..", "..", "consistency-policy"
-)
-if os.path.isdir(_consistency_policy_path):
-    sys.path.insert(0, os.path.abspath(_consistency_policy_path))
-
 from consistency_policy.ctm_unet import CTMConditionalUnet1D as MeanFlowConditionalUnet1D
 
 __all__ = ["MeanFlowConditionalUnet1D"]
