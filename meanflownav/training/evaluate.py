@@ -24,9 +24,8 @@ from flownav.training.utils import (
     get_delta,
     normalize_data,
     from_numpy,
-    visualize_action_distribution,
 )
-from meanflownav.training.utils import compute_losses
+from meanflownav.training.utils import compute_losses, visualize_action_distribution
 
 
 def evaluate(
