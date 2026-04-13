@@ -208,6 +208,8 @@ def visualize_action_distribution(
     num_samples: int = 30,   # 每个样本生成的预测轨迹条数（越多分布越完整，但推理越慢）
     use_wandb: bool = True,  # 是否将图片上传到 Weights & Biases
 ) -> None:
+    ema_model.eval()  # 切换到评估模式，关闭 dropout 和 batchnorm 等训练特有行为
+    print('ema_model.training:',ema_model.training)
     # 构建本次可视化的保存目录路径：project_folder/visualize/{eval_type}/epoch{epoch}/action_sampling_prediction/
     visualize_path = os.path.join(
         project_folder,

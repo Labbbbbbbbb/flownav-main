@@ -216,6 +216,27 @@ def train(
                     )
 
             if image_log_freq != 0 and i % image_log_freq == 0:
+                if print_log_freq != 0 and i % print_log_freq == 0:
+                    actions_xy = actions[..., :2].float()
+                    goal_pos_xy = goal_pos[..., :2].float() if goal_pos.shape[-1] >= 2 else goal_pos.float()
+
+                    print(
+                        f"[viz-debug] epoch={epoch} batch={i} "
+                        f"ema_model.training={ema_model.training} "
+                        f"model.training={model.training}"
+                    )
+                    print(
+                        f"[viz-debug] actions_xy min/max=({actions_xy.min().item():.4f}, {actions_xy.max().item():.4f}) "
+                        f"mean/std=({actions_xy.mean().item():.4f}, {actions_xy.std().item():.4f})"
+                    )
+                    print(
+                        f"[viz-debug] goal_pos min/max=({goal_pos_xy.min().item():.4f}, {goal_pos_xy.max().item():.4f}) "
+                        f"mean/std=({goal_pos_xy.mean().item():.4f}, {goal_pos_xy.std().item():.4f})"
+                    )
+                    print(
+                        f"[viz-debug] distance min/max=({distance.min().item():.4f}, {distance.max().item():.4f}) "
+                        f"mean/std=({distance.mean().item():.4f}, {distance.std().item():.4f})"
+                    )
                 visualize_action_distribution(
                     ema_model=ema_model,
                     batch_obs_images=batch_obs_images,
@@ -233,3 +254,7 @@ def train(
                     num_samples=4,
                     use_wandb=use_wandb,
                 )
+
+
+
+                

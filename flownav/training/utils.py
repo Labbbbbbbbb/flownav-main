@@ -263,9 +263,8 @@ def visualize_action_distribution(
 ) -> None:
     # 构建本次可视化的保存目录路径：project_folder/visualize/{eval_type}/epoch{epoch}/action_sampling_prediction/
     
-    print("IN Visualize Action Distribution:")
-    for name, module in ema_model.named_children():
-        print(name, type(module))
+    print('ema_model.training:',ema_model.training)
+
 
 
 
