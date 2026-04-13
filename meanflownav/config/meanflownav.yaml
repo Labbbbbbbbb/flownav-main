@@ -3,14 +3,14 @@ entity: <YOUR ENTITY>
 run_name: meanflownav
 
 # training setup
-use_wandb: False
+use_wandb: True
 train: True
-batch_size: 512
-eval_batch_size: 512
+batch_size: 2
+eval_batch_size: 2
 epochs: 30
 gpu_ids: [0]
 num_workers: 8
-lr: 1e-4
+lr: 0.0001
 optimizer: adamw
 clipping: False
 max_norm: 1.
@@ -44,7 +44,7 @@ depth:
   pool_dim: 64
   out_dim:
     vits: 384
-  weights_path: <DEPTH_ANYTHING_WEIGHTS_PATH>
+  weights_path: /data/home/libo/project/flownav/model_weights/depth_anything_v2_vits.pth
 
 # mask
 goal_mask_prob: 0.5
@@ -55,7 +55,7 @@ normalize: True
 # context
 context_type: temporal
 context_size: 3
-alpha: 1e-4
+alpha: 0.0001
 
 # distance bounds
 distance:
@@ -78,19 +78,19 @@ meanflow:
   P_mean_r: -4.0
   P_std_r: 1.6
   norm_p: 0.75
-  norm_eps: 1e-3
+  norm_eps: 0.001
   ema_decay: 0.9999
   ema_period: 16
 
 # dataset specific parameters
 image_size: [96, 96]
 datasets:
-  recon:
-    data_folder: /data/home/mobilemani/data/nomad_dataset/recon
-    train: /data/home/mobilemani/data/data_splits/recon/train/
-    test: /data/home/mobilemani/data/data_splits/recon/test/
-    end_slack: 3
-    goals_per_obs: 1
+  go_stanford:
+    data_folder: /data/home/mobilemani/downloads/data/go_stanford/go_stanford
+    train: /data/home/libo/project/flownav/data_splits/go_stanford/train/
+    test: /data/home/libo/project/flownav/data_splits/go_stanford/test/
+    end_slack: 0
+    goals_per_obs: 2
     negative_mining: True
     waypoint_spacing: 1
 
