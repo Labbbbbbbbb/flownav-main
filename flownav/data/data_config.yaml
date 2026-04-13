@@ -17,3 +17,6 @@ tartan_drive:
 
 go_stanford:
   metric_waypoint_spacing: 0.12
+
+custom:
+  metric_waypoint_spacing: 0.25 #相邻帧之间的距离，单位为米

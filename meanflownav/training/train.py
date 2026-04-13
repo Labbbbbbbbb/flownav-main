@@ -30,7 +30,8 @@ from flownav.training.utils import (
     normalize_data,
     from_numpy,
 )
-
+from meanflownav.training.utils import compute_losses
+from meanflownav.training.utils import visualize_action_distribution
 
 def train(
     model: nn.Module,
@@ -47,7 +48,7 @@ def train(
     alpha: float = 1e-4,
     print_log_freq: int = 100,
     wandb_log_freq: int = 10,
-    image_log_freq: int = 1000,
+    image_log_freq: int = 1,
     num_images_log: int = 8,
     use_wandb: bool = True,
 ):
@@ -88,6 +89,8 @@ def train(
 
             # Split the observation image into RGB channels
             obs_images = torch.split(obs_image, 3, dim=1)
+            batch_viz_obs_images = TF.resize(obs_images[-1], VISUALIZATION_IMAGE_SIZE[::-1])
+            batch_viz_goal_images = TF.resize(goal_image, VISUALIZATION_IMAGE_SIZE[::-1])
             batch_obs_images = [transform(obs) for obs in obs_images]
             batch_obs_images = torch.cat(batch_obs_images, dim=1).to(device)
             batch_goal_images = transform(goal_image).to(device)
@@ -211,3 +214,22 @@ def train(
                         f"(epoch {epoch}) (batch {i}/{num_batches - 1}) "
                         f"{logger.display()}"
                     )
+
+            if image_log_freq != 0 and i % image_log_freq == 0:
+                visualize_action_distribution(
+                    ema_model=ema_model,
+                    batch_obs_images=batch_obs_images,
+                    batch_goal_images=batch_goal_images,
+                    batch_viz_obs_images=batch_viz_obs_images,
+                    batch_viz_goal_images=batch_viz_goal_images,
+                    batch_action_label=actions,
+                    batch_distance_labels=distance,
+                    batch_goal_pos=goal_pos,
+                    device=device,
+                    eval_type="train",
+                    project_folder=project_folder,
+                    epoch=epoch,
+                    num_images_log=num_images_log,
+                    num_samples=4,
+                    use_wandb=use_wandb,
+                )

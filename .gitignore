@@ -154,3 +154,6 @@ dmypy.json
 deployment/src/test/*
 deployment/src/explore_topomap/*
 conditional-flow-matching/
+DataSet/
+recon_datavis/
+wandb/

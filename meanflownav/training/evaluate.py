@@ -19,15 +19,15 @@ from torchvision import transforms
 
 from flownav.data.data_utils import VISUALIZATION_IMAGE_SIZE
 from flownav.training.logger import Logger
-from flownav.training.utils import (
-    ACTION_STATS,
-    get_delta,
-    normalize_data,
-    from_numpy,
-    visualize_action_distribution,
-)
+# from flownav.training.utils import (
+#     ACTION_STATS,
+#     get_delta,
+#     normalize_data,
+#     from_numpy,
+#     visualize_action_distribution,
+# )
 from meanflownav.training.utils import compute_losses
-
+from meanflownav.training.utils import visualize_action_distribution
 
 def evaluate(
     eval_type: str,
@@ -40,11 +40,15 @@ def evaluate(
     epoch: int,
     print_log_freq: int = 100,
     wandb_log_freq: int = 10,
-    image_log_freq: int = 1000,
+    image_log_freq: int = 1000,#1000
     num_images_log: int = 8,
     eval_fraction: float = 0.25,
     use_wandb: bool = True,
 ):
+    
+    # print("IN EVALUATE:")
+    # for name, module in ema_model.named_children():
+    #     print(name, type(module))
     goal_mask_prob = torch.clip(torch.tensor(goal_mask_prob), 0, 1)
     ema_model.eval()
 
