@@ -42,6 +42,8 @@ def model_output(
     num_samples: int,
     device: torch.device,
     use_wandb: bool,
+    return_action_stages: bool = False,
+    stage_ratios: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0),
 ) -> dict[str, torch.Tensor]:
     """One-step MeanFlow inference, replacing 10-step ODE integration."""
 
@@ -70,6 +72,7 @@ def model_output(
 
     with torch.no_grad():
         start_time = time.time()
+        gc_action_stages = None
 
         # Exploration — one-step MeanFlow
         e = torch.randn(
@@ -95,6 +98,10 @@ def model_output(
             sample=e, timestep=t, stoptime=h, global_cond=obsgoal_cond
         )
         gc_actions = get_action(e - u, ACTION_STATS)
+        if return_action_stages:
+            gc_action_stages = [
+                get_action(e - ratio * u, ACTION_STATS) for ratio in stage_ratios
+            ]
 
         proc_time = time.time() - start_time
         if use_wandb:
@@ -105,11 +112,16 @@ def model_output(
     obsgoal_cond_flat = obsgoal_cond.flatten(start_dim=1)
     gc_distance = model("dist_pred_net", obsgoal_cond=obsgoal_cond_flat)
 
-    return {
+    result = {
         "uc_actions": uc_actions,
         "gc_actions": gc_actions,
         "gc_distance": gc_distance,
     }
+    if return_action_stages and gc_action_stages is not None:
+        result["gc_action_stages"] = gc_action_stages
+        result["stage_ratios"] = np.array(stage_ratios, dtype=np.float32)
+
+    return result
 
 
 def compute_losses(
@@ -251,6 +263,8 @@ def visualize_action_distribution(
     uc_actions_list = []   # 无条件（探索模式）预测轨迹
     gc_actions_list = []   # 有目标条件（导航模式）预测轨迹
     gc_distances_list = [] # 有目标条件下预测的距离值
+    stage_ratios = np.array([0.0, 0.25, 0.5, 0.75, 1.0], dtype=np.float32)
+    gc_action_stages_list = [[] for _ in stage_ratios]
 
     # 遍历各子块，调用 model_output 进行推理
     for obs, goal in zip(batch_obs_images_list, batch_goal_images_list):
@@ -263,11 +277,15 @@ def visualize_action_distribution(
             num_samples=num_samples,  # 每个样本生成 num_samples 条轨迹
             device=device,
             use_wandb=use_wandb,
+            return_action_stages=True,
+            stage_ratios=tuple(float(x) for x in stage_ratios),
         )
         # 将 GPU tensor 转为 numpy，便于后续 matplotlib 绘图
         uc_actions_list.append(to_numpy(model_output_dict["uc_actions"]))
         gc_actions_list.append(to_numpy(model_output_dict["gc_actions"]))
         gc_distances_list.append(to_numpy(model_output_dict["gc_distance"]))
+        for stage_idx, stage_action in enumerate(model_output_dict["gc_action_stages"]):
+            gc_action_stages_list[stage_idx].append(to_numpy(stage_action))
 
     # 将各子块结果沿 axis=0 拼接，得到完整的预测结果数组
     # shape: (num_images_log * num_samples, pred_horizon, action_dim)
@@ -280,6 +298,13 @@ def visualize_action_distribution(
     uc_actions_list = np.split(uc_actions_list, num_images_log, axis=0)
     gc_actions_list = np.split(gc_actions_list, num_images_log, axis=0)
     gc_distances_list = np.split(gc_distances_list, num_images_log, axis=0)
+    for stage_idx in range(len(gc_action_stages_list)):
+        gc_action_stages_list[stage_idx] = np.concatenate(
+            gc_action_stages_list[stage_idx], axis=0
+        )
+        gc_action_stages_list[stage_idx] = np.split(
+            gc_action_stages_list[stage_idx], num_images_log, axis=0
+        )
     # 计算每个样本的距离预测均值和标准差，用于图标题显示
     gc_distances_avg = [np.mean(dist) for dist in gc_distances_list]
     gc_distances_std = [np.std(dist) for dist in gc_distances_list]
@@ -288,8 +313,8 @@ def visualize_action_distribution(
 
     # 逐样本绘图
     for i in range(num_images_log):
-        # 创建 1 行 3 列的子图：左=轨迹分布，中=观测图，右=目标图
-        fig, ax = plt.subplots(1, 3)
+        # 创建 1 行 4 列的子图：最左=高斯到最终阶段轨迹，次左=轨迹分布，次右=观测图，最右=目标图
+        fig, ax = plt.subplots(1, 4)
         uc_actions = uc_actions_list[i]  # 第 i 个样本的无条件预测轨迹，shape (num_samples, pred_horizon, 2)
         gc_actions = gc_actions_list[i]  # 第 i 个样本的有条件预测轨迹，shape (num_samples, pred_horizon, 2)
         action_label = to_numpy(batch_action_label[i])  # ground truth 轨迹，shape (pred_horizon, 2)
@@ -313,9 +338,9 @@ def visualize_action_distribution(
         point_list = [np.array([0, 0]), to_numpy(batch_goal_pos[i])]
         point_colors = ["green", "red"]  # 当前位置=绿，目标位置=红
         point_alphas = [1.0, 1.0]
-        # 绘制所有轨迹和标记点到左侧子图
+        # 绘制所有轨迹和标记点到第二列子图（原始 action predictions）
         plot_trajs_and_points(
-            ax=ax[0],
+            ax=ax[1],
             list_trajs=traj_list,
             list_points=point_list,
             traj_colors=traj_colors,
@@ -326,22 +351,51 @@ def visualize_action_distribution(
             traj_alphas=traj_alphas,
             point_alphas=point_alphas,
         )
+
+        # 在最左侧子图单独可视化 MeanFlow 从高斯动作 (t=0) 到最终动作 (t=1) 的演化轨迹
+        stage_point_list = [np.array([0, 0]), to_numpy(batch_goal_pos[i])]
+        plot_trajs_and_points(
+            ax=ax[0],
+            list_trajs=[],
+            list_points=stage_point_list,
+            point_colors=["green", "red"],
+            traj_labels=None,
+            point_labels=["robot", "goal"],
+            quiver_freq=0,
+            point_alphas=[1.0, 1.0],
+        )
+        stage_colors = plt.cm.plasma(np.linspace(0.1, 0.9, len(stage_ratios)))
+        for stage_idx, stage_ratio in enumerate(stage_ratios):
+            stage_actions = gc_action_stages_list[stage_idx][i]
+            stage_mean_action = np.mean(stage_actions, axis=0)
+            ax[0].plot(
+                stage_mean_action[:, 0],
+                stage_mean_action[:, 1],
+                color=stage_colors[stage_idx],
+                linewidth=2.0,
+                linestyle="--" if stage_idx < len(stage_ratios) - 1 else "-",
+                alpha=0.95,
+                label=f"gc t={stage_ratio:.2f}",
+                marker="o",
+            )
+        ax[0].legend(bbox_to_anchor=(0.0, -0.5), loc="upper left", ncol=2)
         # 将观测和目标图像从 (C, H, W) 转为 (H, W, C)，imshow 需要 channel-last 格式
         obs_image = to_numpy(batch_viz_obs_images[i])
         goal_image = to_numpy(batch_viz_goal_images[i])
         obs_image = np.moveaxis(obs_image, 0, -1)   # (C,H,W) → (H,W,C)
         goal_image = np.moveaxis(goal_image, 0, -1) # (C,H,W) → (H,W,C)
-        ax[1].imshow(obs_image)   # 中图：当前观测帧
-        ax[2].imshow(goal_image)  # 右图：目标图像
-        ax[0].set_title("action predictions")
-        ax[1].set_title("observation")
-        # 右图标题同时显示 ground truth 距离标签和模型预测距离（均值±标准差）
-        ax[2].set_title(
+        ax[2].imshow(obs_image)   # 第三列：当前观测帧
+        ax[3].imshow(goal_image)  # 第四列：目标图像
+        ax[0].set_title("gaussian->final stages")
+        ax[1].set_title("action predictions")
+        ax[2].set_title("observation")
+        # 最右图标题同时显示 ground truth 距离标签和模型预测距离（均值±标准差）
+        ax[3].set_title(
             f"goal: label={np_distance_labels[i]} gc_dist={gc_distances_avg[i]:.2f}±{gc_distances_std[i]:.2f}"
         )
 
-        # 放大图片尺寸，使三个子图都清晰可读
-        fig.set_size_inches(18.5, 10.5)
+        # 放大图片尺寸，使四个子图都清晰可读
+        fig.set_size_inches(24.0, 10.5)
         # 保存到磁盘：project_folder/visualize/{eval_type}/epoch{epoch}/action_sampling_prediction/sample_{i}.png
         save_path = os.path.join(visualize_path, f"sample_{i}.png")
         plt.savefig(save_path)
