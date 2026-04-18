@@ -31,15 +31,15 @@ class FlowCorrectWrapper(nn.Module):
 
     Wraps a frozen NoMaD model, adding:
     - A small LoRA correction network that produces velocity adjustments
-    - A gate network that decides when to apply corrections
 
     The interface is identical to NoMaD: forward(func_name, **kwargs).
     """
 
-    def __init__(self, base_model, encoding_dim=256, hidden_dim=64):
+    def __init__(self, base_model, encoding_dim=256, hidden_dim=64, alpha=1.0):
         super().__init__()
         self.base_model = base_model
         self.encoding_dim = encoding_dim
+        self.alpha = alpha
 
         # Freeze base model
         for p in base_model.parameters():
@@ -60,13 +60,6 @@ class FlowCorrectWrapper(nn.Module):
         nn.init.zeros_(self.lora[-1].weight)
         nn.init.zeros_(self.lora[-1].bias)
 
-        # Gate: global_cond → α ∈ [0, 1]
-        self.gate = nn.Sequential(
-            nn.Linear(encoding_dim, hidden_dim),
-            nn.Mish(),
-            nn.Linear(hidden_dim, 1),
-            nn.Sigmoid(),
-        )
 
     def forward(self, func_name, **kwargs):
         """Drop-in replacement for NoMaD.forward()."""
@@ -87,10 +80,6 @@ class FlowCorrectWrapper(nn.Module):
                 global_cond=global_cond,
             )
 
-        # Gate
-        alpha = self.gate(global_cond)  # (B, 1)
-        alpha = alpha.unsqueeze(1)      # (B, 1, 1)
-
         # Build LoRA input: (sample, v_base, t, cond) along last dim
         if isinstance(timestep, (int, float)):
             t_val = torch.tensor(timestep, device=sample.device, dtype=sample.dtype)
@@ -106,7 +95,7 @@ class FlowCorrectWrapper(nn.Module):
 
         v_corr = self.lora(lora_input)  # (B, T, 2)
 
-        return v_base + alpha * v_corr
+        return v_base + self.alpha * v_corr
 
     @torch.no_grad()
     def sample_trajectories(
@@ -192,7 +181,7 @@ class FlowCorrectWrapper(nn.Module):
             # Target velocity: steer from x_n to corrected_action
             v_target = (corrected_action - x) / remaining
 
-            # Corrected velocity (LoRA active, gate forced to 1)
+            # Corrected velocity (LoRA active)
             v_base = self.base_model(
                 "noise_pred_net",
                 sample=x.detach(),
@@ -208,7 +197,7 @@ class FlowCorrectWrapper(nn.Module):
             )
             v_corr = self.lora(lora_input)  # (B, T, 2)
 
-            v_corrected = v_base + v_corr  # gate=1 in stage 1
+            v_corrected = v_base + self.alpha * v_corr 
 
             # Weighted loss: later steps matter more
             w_n = (n + 1) / num_steps
@@ -221,111 +210,28 @@ class FlowCorrectWrapper(nn.Module):
 
         return total_loss / num_steps
 
-    def grpo_loss(self, obs_cond, trajectories, scores, num_steps=10, eps=1e-6):
-        """GRPO training for LoRA via advantage-weighted flow edit loss.
-
-        Samples a group of trajectories, scores them with VLM, normalizes
-        scores to advantages, and trains LoRA weighted by advantage.
-        Only trajectories with positive advantage contribute (reinforce good ones).
-
-        Args:
-            obs_cond: (B, encoding_dim) — encoded observation.
-            trajectories: (B, N, pred_horizon, 2) — N sampled trajectories
-                          in normalized delta space.
-            scores: (B, N) — VLM scores for each trajectory.
-            num_steps: ODE integration steps for flow edit loss.
-            eps: std epsilon for numerical stability.
-
-        Returns:
-            loss: scalar tensor.
-        """
-        B, N, T, D = trajectories.shape
-        device = trajectories.device
-
-        # Group-relative advantages: (score - mean) / (std + eps)
-        mean = scores.mean(dim=1, keepdim=True)
-        std = scores.std(dim=1, keepdim=True)
-        advantages = (scores - mean) / (std + eps)  # (B, N)
-
-        # Only reinforce trajectories with positive advantage
-        advantages = advantages.clamp(min=0)
-
-        # Skip if no positive advantages
-        if advantages.sum() == 0:
-            return torch.tensor(0.0, device=device, requires_grad=True)
-
-        # Compute weighted flow edit loss
-        total_loss = torch.tensor(0.0, device=device)
-        total_weight = 0.0
-
-        for i in range(N):
-            w = advantages[:, i].mean().item()  # scalar weight for trajectory i
-            if w <= 0:
-                continue
-            # flow_edit_loss for this trajectory across the batch
-            traj_i = trajectories[:, i]  # (B, T, D)
-            loss_i = self.flow_edit_loss(obs_cond, traj_i, num_steps=num_steps)
-            total_loss = total_loss + w * loss_i
-            total_weight += w
-
-        if total_weight > 0:
-            total_loss = total_loss / total_weight
-
-        return total_loss
-
-    def gate_loss(self, obs_cond, labels, entropy_weight=0.1):
-        """Compute gate training loss.
-
-        Args:
-            obs_cond: (B, encoding_dim) — encoded observation.
-            labels: (B,) float — 1.0 if correction needed, 0.0 if not.
-            entropy_weight: λ for entropy penalty (encourages decisive 0/1).
-
-        Returns:
-            loss: scalar tensor.
-        """
-        alpha = self.gate(obs_cond).squeeze(-1)  # (B,)
-
-        # BCE loss
-        bce = F.binary_cross_entropy(alpha, labels)
-
-        # Entropy penalty: encourage α close to 0 or 1
-        entropy = -(alpha * torch.log(alpha + 1e-8)
-                     + (1 - alpha) * torch.log(1 - alpha + 1e-8))
-        entropy_penalty = entropy.mean()
-
-        return bce - entropy_weight * entropy_penalty
 
     def save_plugin(self, path):
-        """Save only LoRA + Gate weights (tiny file)."""
+        """Save only LoRA weights."""
         torch.save({
             "lora": self.lora.state_dict(),
-            "gate": self.gate.state_dict(),
         }, path)
 
     def load_plugin(self, path):
-        """Load LoRA + Gate weights."""
+        """Load LoRA weights."""
         ckpt = torch.load(path, map_location="cpu")
         self.lora.load_state_dict(ckpt["lora"])
-        self.gate.load_state_dict(ckpt["gate"])
 
     def trainable_parameters(self):
-        """Return only LoRA + Gate parameters (for optimizer)."""
-        return list(self.lora.parameters()) + list(self.gate.parameters())
+        """Return only LoRA parameters (for optimizer)."""
+        return list(self.lora.parameters())
 
     def num_trainable_params(self):
         return sum(p.numel() for p in self.trainable_parameters())
 
     def train_lora(self):
-        """Train LoRA correction only (gate fixed α=1)."""
+        """Train LoRA correction only."""
         for p in self.lora.parameters():
             p.requires_grad = True
-        for p in self.gate.parameters():
+        for p in self.base_model.parameters():
             p.requires_grad = False
-
-    def train_gate(self):
-        """Train gate only (LoRA frozen)."""
-        for p in self.lora.parameters():
-            p.requires_grad = False
-        for p in self.gate.parameters():
-            p.requires_grad = True
