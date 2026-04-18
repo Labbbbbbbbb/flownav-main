@@ -2,28 +2,117 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchdiffeq
+import cv2
 import numpy as np
 import os
 import yaml
 
+class TrajectoryProjector:
+    """Handles action space conversions and camera projection.
 
-def _load_action_stats():
-    """Load action stats without importing flownav.training.utils (avoids diffusers)."""
-    cfg_path = os.path.join(
-        os.path.dirname(__file__), "../flownav/data/data_config.yaml"
+    Loads action stats and camera intrinsics once, then provides methods to
+    convert between normalized deltas, cumulative actions, and pixel coords.
+    """
+
+    base_dir = os.path.dirname(__file__)
+    default_action_config = os.path.join(base_dir, "../flownav/data/data_config.yaml")
+    default_camera_config = os.path.join(
+        base_dir, "../thirdparty/visualnav-transformer/train/vint_train/data/data_config.yaml"
     )
-    with open(cfg_path, "r") as f:
-        data_config = yaml.safe_load(f)
-    return {k: np.array(v) for k, v in data_config["action_stats"].items()}
 
+    def __init__(self, dataset_name="recon", image_size=(640, 480),
+                 action_config_path=default_action_config,
+                 camera_config_path=default_camera_config,
+                 camera_params=None):
+        """
+        Args:
+            dataset_name: dataset key in camera config yaml.
+            image_size: (width, height) for pixel clipping.
+            action_config_path: path to action stats yaml.
+            camera_config_path: path to camera metrics yaml.
+            camera_params: dict to directly specify camera intrinsics, e.g.:
+                {
+                    "camera_height": 0.95,
+                    "camera_x_offset": 0.45,
+                    "fx": 272.5, "fy": 266.4, "cx": 320.0, "cy": 220.0,
+                    "k1": 0.0, "k2": 0.0, "p1": 0.0, "p2": 0.0, "k3": 0.0,
+                }
+                When provided, camera_config_path and dataset_name are ignored
+                for camera loading.
+        """
+        with open(action_config_path, "r") as f:
+            action_config = yaml.safe_load(f)
+        self.action_stats = {k: np.array(v) for k, v in action_config["action_stats"].items()}
 
-def _get_action(ndeltas, action_stats):
-    """Convert normalized deltas to cumulative actions (no diffusers dependency)."""
-    ndeltas_np = ndeltas.detach().cpu().numpy().reshape(ndeltas.shape[0], -1, 2)
-    # unnormalize: [-1,1] → real
-    ndeltas_np = (ndeltas_np + 1) / 2 * (action_stats["max"] - action_stats["min"]) + action_stats["min"]
-    actions = np.cumsum(ndeltas_np, axis=1)
-    return torch.from_numpy(actions).float().to(ndeltas.device)
+        if camera_params is not None:
+            self._init_camera_from_dict(camera_params)
+        else:
+            with open(camera_config_path, "r") as f:
+                camera_config = yaml.safe_load(f)
+            cam = camera_config[dataset_name]["camera_metrics"]
+            self._init_camera_from_yaml(cam)
+        self.image_size = image_size
+
+    def _init_camera_from_yaml(self, cam):
+        """Initialize from yaml camera_metrics nested dict."""
+        cm = cam["camera_matrix"]
+        dc = cam["dist_coeffs"]
+        self._init_camera_from_dict({
+            "camera_height": cam["camera_height"],
+            "camera_x_offset": cam.get("camera_x_offset", 0.0),
+            "fx": cm["fx"], "fy": cm["fy"], "cx": cm["cx"], "cy": cm["cy"],
+            "k1": dc["k1"], "k2": dc["k2"], "p1": dc["p1"], "p2": dc["p2"], "k3": dc["k3"],
+        })
+
+    def _init_camera_from_dict(self, p):
+        self.camera_height = p["camera_height"]
+        self.camera_x_offset = p.get("camera_x_offset", 0.0)
+        self.camera_matrix = np.array([
+            [p["fx"], 0.0, p["cx"]],
+            [0.0, p["fy"], p["cy"]],
+            [0.0, 0.0, 1.0],
+        ])
+        # 畸变矫正参数，k1,k2,k3为径向畸变，p1,p2为切向畸变
+        self.dist_coeffs = np.array([
+            p.get("k1", 0.0), p.get("k2", 0.0),
+            p.get("p1", 0.0), p.get("p2", 0.0),
+            p.get("k3", 0.0), 0.0, 0.0, 0.0,
+        ])
+
+    def ndeltas_to_actions(self, ndeltas):
+        """Normalized deltas (B, T, 2) tensor → cumulative actions (B, T, 2) tensor."""
+        ndeltas_np = ndeltas.detach().cpu().numpy().reshape(ndeltas.shape[0], -1, 2)
+        ndeltas_np = (ndeltas_np + 1) / 2 * (self.action_stats["max"] - self.action_stats["min"]) + self.action_stats["min"]
+        actions = np.cumsum(ndeltas_np, axis=1)
+        return torch.from_numpy(actions).float().to(ndeltas.device)
+
+    def project_points(self, xy):
+        """Local (x, y) waypoints (B, T, 2) np → pixel (u, v) (B, T, 2) np.
+
+        Reused from visualnav-transformer/train/vint_train/visualizing/action_utils.py.
+        """
+        batch_size, horizon, _ = xy.shape
+        xyz = np.concatenate(
+            [xy, -self.camera_height * np.ones(list(xy.shape[:-1]) + [1])], axis=-1
+        )
+        rvec = tvec = (0, 0, 0)
+        xyz[..., 0] += self.camera_x_offset
+        xyz_cv = np.stack([xyz[..., 1], -xyz[..., 2], xyz[..., 0]], axis=-1)
+        uv, _ = cv2.projectPoints(
+            xyz_cv.reshape(batch_size * horizon, 3).astype(np.float64),
+            rvec, tvec, self.camera_matrix, self.dist_coeffs,
+        )
+        uv = uv.reshape(batch_size, horizon, 2)
+        return uv
+
+    def actions_to_pixels(self, actions_np):
+        """Cumulative actions (B, T, 2) np → clipped pixel coords (B, T, 2) np."""
+        w, h = self.image_size
+        uv = self.project_points(actions_np)
+        uv[..., 0] = w - uv[..., 0]
+        uv[..., 0] = np.clip(uv[..., 0], 0, w)
+        uv[..., 1] = np.clip(uv[..., 1], 0, h)
+        return uv
 
 
 class FlowCorrectWrapper(nn.Module):
@@ -35,11 +124,13 @@ class FlowCorrectWrapper(nn.Module):
     The interface is identical to NoMaD: forward(func_name, **kwargs).
     """
 
-    def __init__(self, base_model, encoding_dim=256, hidden_dim=64, alpha=1.0):
+    def __init__(self, base_model, encoding_dim=256, hidden_dim=64, alpha=1.0,
+                 dataset_name="recon", **projector_kwargs):
         super().__init__()
         self.base_model = base_model
         self.encoding_dim = encoding_dim
         self.alpha = alpha
+        self.projector = TrajectoryProjector(dataset_name=dataset_name, **projector_kwargs)
 
         # Freeze base model
         for p in base_model.parameters():
@@ -67,7 +158,7 @@ class FlowCorrectWrapper(nn.Module):
             return self._corrected_velocity(**kwargs)
         return self.base_model(func_name, **kwargs)
 
-    def _corrected_velocity(self, sample, timestep, global_cond, **kwargs):
+    def _corrected_velocity(self, sample, timestep, global_cond, **_):
         """Compute v_base + α * v_correction."""
         B, T, _ = sample.shape
 
@@ -118,13 +209,16 @@ class FlowCorrectWrapper(nn.Module):
             use_correction: if True, use corrected velocity; else use base.
 
         Returns:
-            actions: (B, num_samples, pred_horizon, action_dim) in local coords.
+            dict with:
+                "ndeltas": (B, N, T, 2) normalized deltas (for flow_edit_loss).
+                "actions": (B, N, T, 2) cumulative actions in local coords.
+                "pixels":  (B, N, T, 2) pixel coordinates (for VLM rendering).
+                "obs_cond": (B, encoding_dim) encoded observation.
         """
         if device is None:
             device = obs_images.device
         B = obs_images.shape[0]
 
-        # Encode observation + goal
         no_mask = torch.zeros(B, dtype=torch.long, device=device)
         obs_cond = self.base_model(
             "vision_encoder",
@@ -132,9 +226,8 @@ class FlowCorrectWrapper(nn.Module):
             goal_img=goal_images,
             input_goal_mask=no_mask,
         )
-        obs_cond_rep = obs_cond.repeat_interleave(num_samples, dim=0)  # (B*N, enc)
+        obs_cond_rep = obs_cond.repeat_interleave(num_samples, dim=0)
 
-        # ODE integration
         x = torch.randn(B * num_samples, pred_horizon, action_dim, device=device)
         ts = torch.linspace(0, 1, num_steps, device=device)
 
@@ -147,9 +240,17 @@ class FlowCorrectWrapper(nn.Module):
             ts,
             method="euler",
         )
-        actions = _get_action(traj[-1], _load_action_stats())  # (B*N, H, 2)
-        actions = actions.reshape(B, num_samples, pred_horizon, action_dim)
-        return actions
+
+        ndeltas = traj[-1]  # (B*N, T, 2) normalized deltas
+        actions = self.projector.ndeltas_to_actions(ndeltas)  # (B*N, T, 2) cumulative
+        pixels_np = self.projector.actions_to_pixels(actions.cpu().numpy())  # (B*N, T, 2)
+
+        return {
+            "ndeltas": ndeltas.reshape(B, num_samples, pred_horizon, action_dim),
+            "actions": actions.reshape(B, num_samples, pred_horizon, action_dim),
+            "pixels": torch.from_numpy(pixels_np).float().reshape(B, num_samples, pred_horizon, action_dim),
+            "obs_cond": obs_cond,
+        }
 
     def flow_edit_loss(self, obs_cond, corrected_action, num_steps=10):
         """Compute FlowCorrect flow-edit loss for training LoRA.
@@ -210,6 +311,50 @@ class FlowCorrectWrapper(nn.Module):
 
         return total_loss / num_steps
 
+    def flow_correct_step(
+        self, obs_images, goal_images, scorer_fn,
+        num_samples=5, num_steps=10, pred_horizon=8,
+    ):
+        """End-to-end: sample → VLM score → select best → flow_edit_loss.
+
+        Args:
+            obs_images: (B, C, H, W) observation tensor.
+            goal_images: (B, C, H, W) goal tensor.
+            scorer_fn: callable(obs_image_np, list_of_pixel_trajs) → list of scores.
+                obs_image_np: (H, W, 3) uint8 numpy array.
+                list_of_pixel_trajs: list of N arrays, each (T, 2) in pixel coords.
+                Returns: list of N float scores.
+            num_samples: trajectories per observation.
+            num_steps: ODE integration steps.
+            pred_horizon: prediction horizon.
+
+        Returns:
+            loss: scalar tensor (flow_edit_loss on best trajectories).
+        """
+        B = obs_images.shape[0]
+        device = obs_images.device
+
+        with torch.no_grad():
+            result = self.sample_trajectories(
+                obs_images, goal_images,
+                pred_horizon=pred_horizon, num_samples=num_samples,
+                num_steps=num_steps, use_correction=False,
+            )
+
+        obs_cond = result["obs_cond"]
+        ndeltas = result["ndeltas"]     # (B, N, T, 2)
+        pixels = result["pixels"]       # (B, N, T, 2)
+
+        best_ndeltas = []
+        for b in range(B):
+            pixel_trajs = [pixels[b, n].cpu().numpy() for n in range(num_samples)]
+            obs_np = (obs_images[b].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+            scores = scorer_fn(obs_np, pixel_trajs)
+            best_idx = int(np.argmax(scores))
+            best_ndeltas.append(ndeltas[b, best_idx])
+
+        corrected_action = torch.stack(best_ndeltas, dim=0).to(device)  # (B, T, 2)
+        return self.flow_edit_loss(obs_cond, corrected_action, num_steps=num_steps)
 
     def save_plugin(self, path):
         """Save only LoRA weights."""
@@ -235,3 +380,10 @@ class FlowCorrectWrapper(nn.Module):
             p.requires_grad = True
         for p in self.base_model.parameters():
             p.requires_grad = False
+
+if __name__ == "__main__":
+    # Quick test: instantiate wrapper and check trainable params
+    from flownav.models.nomad import NoMaD
+    base_model = NoMaD()
+    wrapper = FlowCorrectWrapper(base_model)
+    print(f"Total trainable parameters in LoRA: {wrapper.num_trainable_params()}")
