@@ -14,6 +14,6 @@ Usage:
     output = model(sample=z, timestep=t, stoptime=h, global_cond=obs_cond)
 """
 
-from consistency_policy.ctm_unet import CTMConditionalUnet1D as MeanFlowConditionalUnet1D
+from thirdparty.consistency_policy.ctm_unet import CTMConditionalUnet1D as MeanFlowConditionalUnet1D
 
 __all__ = ["MeanFlowConditionalUnet1D"]

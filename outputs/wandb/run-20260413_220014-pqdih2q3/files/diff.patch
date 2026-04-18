@@ -1,0 +1,11 @@
+diff --git a/meanflownav/config/meanflownav.yaml b/meanflownav/config/meanflownav.yaml
+index 8fce5e1..fbfb4ac 100644
+--- a/meanflownav/config/meanflownav.yaml
++++ b/meanflownav/config/meanflownav.yaml
+@@ -1,5 +1,5 @@
+ project_name: meanflownav
+-entity: <YOUR ENTITY>
++entity: scrach
+ run_name: meanflownav
+ 
+ # training setup

@@ -1,0 +1,32 @@
+{
+  "os": "Linux-6.8.0-90-generic-x86_64-with-glibc2.35",
+  "python": "CPython 3.11.15",
+  "startedAt": "2026-04-13T14:00:14.211779Z",
+  "args": [
+    "--config",
+    "meanflownav/config/meanflownav.yaml"
+  ],
+  "program": "/data/home/libo/project/flownav/train_meanflow.py",
+  "codePath": "train_meanflow.py",
+  "codePathLocal": "train_meanflow.py",
+  "git": {
+    "remote": "https://github.com/utn-air/flownav.git",
+    "commit": "6b153311a67159a71b8df61541000b2985bd2aed"
+  },
+  "email": "libo_neu@163.com",
+  "root": "/data/home/libo/project/flownav",
+  "host": "ubuntu-4U-GPU-Server",
+  "executable": "/data/home/libo/miniconda3/envs/flownav/bin/python",
+  "cpu_count": 96,
+  "cpu_count_logical": 192,
+  "disk": {
+    "/": {
+      "total": "942910771200",
+      "used": "59378720768"
+    }
+  },
+  "memory": {
+    "total": "1081783451648"
+  },
+  "writerId": "cy2wgw4omn1dib1gdjri5ggo3y7gi3c6"
+}
