@@ -9,6 +9,8 @@ Key differences from flownav/training/train.py:
 - noise_pred_net called directly with (timestep=t, stoptime=h)
 """
 
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -44,12 +46,14 @@ def train(
     project_folder: str,
     epoch: int,
     meanflow_args,
+    global_step: int = 0,
     alpha: float = 1e-4,
     print_log_freq: int = 100,
     wandb_log_freq: int = 10,
     image_log_freq: int = 1000,
     num_images_log: int = 8,
     use_wandb: bool = True,
+    save_freq: int = 0,
 ):
     goal_mask_prob = torch.clip(torch.tensor(goal_mask_prob), 0, 1)
     model.train()
@@ -76,6 +80,7 @@ def train(
         colour="magenta",
     ) as tepoch:
         for i, data in enumerate(tepoch):
+            global_step += 1
             (
                 obs_image,
                 goal_image,
@@ -211,3 +216,12 @@ def train(
                         f"(epoch {epoch}) (batch {i}/{num_batches - 1}) "
                         f"{logger.display()}"
                     )
+
+            if save_freq > 0 and global_step % save_freq == 0:
+                step_path = os.path.join(project_folder, f"step_{global_step}.pth")
+                torch.save(model_unwrapped.state_dict(), step_path)
+                torch.save(ema_model.state_dict(), os.path.join(project_folder, "ema_latest.pth"))
+                torch.save(model_unwrapped.state_dict(), os.path.join(project_folder, "latest.pth"))
+                print(f">> Saved checkpoint at step {global_step}")
+
+    return global_step

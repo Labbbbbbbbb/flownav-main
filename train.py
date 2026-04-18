@@ -161,7 +161,7 @@ def main(config: dict) -> None:
     # Load pre-trained model if specified
     current_epoch = 0
     if "load_run" in config:
-        load_project_folder = os.path.join("logs", config["load_run"])
+        load_project_folder = os.path.join("outputs", "logs", config["load_run"])
         click.echo(
             click.style(
                 f">> Loading pre-trained model from {load_project_folder}",
@@ -275,7 +275,7 @@ if __name__ == "__main__":
     config.update(user_config)
     config["run_name"] += "_" + time.strftime("%Y_%m_%d_%H_%M_%S")
     config["project_folder"] = os.path.join(
-        "logs", config["project_name"], config["run_name"]
+        "outputs", "logs", config["project_name"], config["run_name"]
     )
     os.makedirs(
         config["project_folder"],
@@ -293,6 +293,7 @@ if __name__ == "__main__":
             project=config["project_name"],
             settings=wandb.Settings(start_method="fork"),
             entity=config["entity"],
+            dir="outputs",
         )
         wandb.save(args.config, policy="now")
         wandb.run.name = config["run_name"]

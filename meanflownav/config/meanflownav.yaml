@@ -102,3 +102,4 @@ pairwise_test_freq: 0
 eval_fraction: 0.25
 wandb_log_freq: 10
 eval_freq: 1
+save_freq: 500  # save checkpoint every N training steps (0 = only save per epoch)

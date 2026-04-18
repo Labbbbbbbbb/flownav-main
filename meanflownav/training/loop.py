@@ -46,6 +46,7 @@ def main_loop(
     use_wandb: bool = True,
     eval_fraction: float = 0.25,
     eval_freq: int = 1,
+    save_freq: int = 0,
 ) -> None:
     latest_path = os.path.join(project_folder, "latest.pth")
 
@@ -59,6 +60,7 @@ def main_loop(
 
     # EMA update counter
     num_updates = torch.tensor(0, dtype=torch.long, device=device)
+    global_step = 0
 
     for epoch in range(current_epoch, current_epoch + epochs):
         if train_model:
@@ -68,7 +70,7 @@ def main_loop(
                     fg="magenta",
                 )
             )
-            train(
+            global_step = train(
                 model=model,
                 ema_model=ema_model,
                 num_updates=num_updates,
@@ -80,12 +82,14 @@ def main_loop(
                 project_folder=project_folder,
                 epoch=epoch,
                 meanflow_args=meanflow_args,
+                global_step=global_step,
                 print_log_freq=print_log_freq,
                 wandb_log_freq=wandb_log_freq,
                 image_log_freq=image_log_freq,
                 num_images_log=num_images_log,
                 use_wandb=use_wandb,
                 alpha=alpha,
+                save_freq=save_freq,
             )
             lr_scheduler.step()
 
