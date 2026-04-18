@@ -1,4 +1,7 @@
-flownav: 
+flownav:
   config_path: "../../flownav/config/flownav.yaml"
+
+meanflownav:
+  config_path: "../../meanflownav/config/meanflownav.yaml"
 
 # add your own model configs here after saving the *.pth file to ../model_weight

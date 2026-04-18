@@ -131,7 +131,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
+reward/.env
 # Spyder project settings
 .spyderproject
 .spyproject

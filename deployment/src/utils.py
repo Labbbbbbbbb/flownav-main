@@ -64,6 +64,43 @@ def load_model(
     return model
 
 
+def load_meanflow_model(
+    model_path: str,
+    config: dict,
+    device: torch.device = torch.device("cpu"),
+) -> nn.Module:
+    """Load a MeanFlow model from checkpoint (uses MeanFlowConditionalUnet1D)."""
+    from meanflownav.models.meanflow_unet1d import MeanFlowConditionalUnet1D
+
+    vision_encoder = NoMaD_ViNT(
+        obs_encoding_size=config["encoding_size"],
+        context_size=config["context_size"],
+        mha_num_attention_heads=config["mha_num_attention_heads"],
+        mha_num_attention_layers=config["mha_num_attention_layers"],
+        mha_ff_dim_factor=config["mha_ff_dim_factor"],
+        depth_cfg=config["depth"],
+    )
+    vision_encoder = replace_bn_with_gn(vision_encoder)
+    noise_pred_net = MeanFlowConditionalUnet1D(
+        input_dim=2,
+        global_cond_dim=config["encoding_size"],
+        down_dims=config["down_dims"],
+        cond_predict_scale=config["cond_predict_scale"],
+    )
+    dist_pred_network = DenseNetwork(embedding_dim=config["encoding_size"])
+
+    model = NoMaD(
+        vision_encoder=vision_encoder,
+        noise_pred_net=noise_pred_net,
+        dist_pred_net=dist_pred_network,
+    )
+
+    state_dict = torch.load(model_path, map_location=device)
+    model.load_state_dict(state_dict, strict=True)
+    model.to(device)
+    return model
+
+
 def msg_to_pil(msg: Image) -> PILImage.Image:
     img = np.frombuffer(msg.data, dtype=np.uint8).reshape(
         msg.height, msg.width, -1)

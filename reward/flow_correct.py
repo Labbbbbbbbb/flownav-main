@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchdiffeq
 import cv2
 import numpy as np
 import os
@@ -207,16 +206,16 @@ class FlowCorrectWrapper(nn.Module):
             return self._corrected_velocity(**kwargs)
         return self.base_model(func_name, **kwargs)
 
-    def _corrected_velocity(self, sample, timestep, global_cond, **_):
+    def _corrected_velocity(self, sample, timestep, stoptime, global_cond, **_):
         """Compute v_base + α * v_correction."""
         B, T, _ = sample.shape
 
-        # Base velocity (frozen, no grad)
+        model_unwrapped = self.base_model.module if hasattr(self.base_model, "module") else self.base_model
         with torch.no_grad():
-            v_base = self.base_model(
-                "noise_pred_net",
+            v_base = model_unwrapped.noise_pred_net(
                 sample=sample,
                 timestep=timestep,
+                stoptime=stoptime,
                 global_cond=global_cond,
             )
 
@@ -245,11 +244,10 @@ class FlowCorrectWrapper(nn.Module):
         pred_horizon=8,
         action_dim=2,
         num_samples=5,
-        num_steps=10,
         device=None,
         use_correction=False,
     ):
-        """Sample trajectory candidates from the base (or corrected) model.
+        """Sample trajectory candidates via one-step MeanFlow inference.
 
         Args:
             obs_images: (B, C, H, W) observation tensor.
@@ -277,22 +275,24 @@ class FlowCorrectWrapper(nn.Module):
         )
         obs_cond_rep = obs_cond.repeat_interleave(num_samples, dim=0)
 
-        x = torch.randn(B * num_samples, pred_horizon, action_dim, device=device)
-        ts = torch.linspace(0, 1, num_steps, device=device)
+        e = torch.randn(B * num_samples, pred_horizon, action_dim, device=device)
+        t = torch.ones(B * num_samples, device=device)
+        h = torch.ones(B * num_samples, device=device)
 
-        forward_fn = self if use_correction else self.base_model
-        traj = torchdiffeq.odeint(
-            lambda t, x_t: forward_fn(
-                "noise_pred_net", sample=x_t, timestep=t, global_cond=obs_cond_rep
-            ),
-            x,
-            ts,
-            method="euler",
-        )
+        model_unwrapped = self.base_model.module if hasattr(self.base_model, "module") else self.base_model
 
-        ndeltas = traj[-1]  # (B*N, T, 2) normalized deltas
-        actions = self.projector.ndeltas_to_actions(ndeltas)  # (B*N, T, 2) cumulative
-        pixels_np = self.projector.actions_to_pixels(actions.cpu().numpy())  # (B*N, T, 2)
+        if use_correction:
+            u = self._corrected_velocity(
+                sample=e, timestep=t, stoptime=h, global_cond=obs_cond_rep
+            )
+        else:
+            u = model_unwrapped.noise_pred_net(
+                sample=e, timestep=t, stoptime=h, global_cond=obs_cond_rep
+            )
+
+        ndeltas = e - u  # (B*N, T, 2)
+        actions = self.projector.ndeltas_to_actions(ndeltas)
+        pixels_np = self.projector.actions_to_pixels(actions.cpu().numpy())
 
         return {
             "ndeltas": ndeltas.reshape(B, num_samples, pred_horizon, action_dim),
@@ -301,68 +301,54 @@ class FlowCorrectWrapper(nn.Module):
             "obs_cond": obs_cond,
         }
 
-    def flow_edit_loss(self, obs_cond, corrected_action, num_steps=10):
-        """Compute FlowCorrect flow-edit loss for training LoRA.
+    def flow_edit_loss(self, obs_cond, corrected_action):
+        """Compute FlowCorrect loss for training LoRA.
 
-        Re-runs ODE with base model, at each step computes target velocity
-        that steers toward corrected_action, and trains LoRA to match it.
+        Uses random-timestep flow matching: at random t, interpolate between
+        noise and corrected_action, then train corrected velocity to point
+        toward corrected_action.
 
         Args:
-            obs_cond: (B, encoding_dim) — encoded observation (from vision_encoder).
-            corrected_action: (B, pred_horizon, 2) — VLM-selected best trajectory
-                              in **normalized delta** space (same as model output).
-            num_steps: number of ODE integration steps.
+            obs_cond: (B, encoding_dim) — encoded observation.
+            corrected_action: (B, T, 2) — VLM-selected best trajectory
+                              in normalized delta space.
 
         Returns:
             loss: scalar tensor.
         """
         B, T, D = corrected_action.shape
         device = corrected_action.device
-        dt = 1.0 / num_steps
 
-        # Start from noise
-        x = torch.randn(B, T, D, device=device)
-        total_loss = 0.0
+        e = torch.randn(B, T, D, device=device)
+        t_val = torch.rand(B, device=device)
 
-        for n in range(num_steps):
-            t_val = torch.tensor(n * dt, device=device)
-            remaining = (num_steps - n) * dt
+        x_t = t_val.view(B, 1, 1) * corrected_action + (1 - t_val.view(B, 1, 1)) * e
+        v_target = corrected_action - e
 
-            # Target velocity: steer from x_n to corrected_action
-            v_target = (corrected_action - x) / remaining
+        stoptime = torch.ones(B, device=device)
 
-            # Corrected velocity (LoRA active)
-            v_base = self.base_model(
-                "noise_pred_net",
-                sample=x.detach(),
+        model_unwrapped = self.base_model.module if hasattr(self.base_model, "module") else self.base_model
+        with torch.no_grad():
+            v_base = model_unwrapped.noise_pred_net(
+                sample=x_t.detach(),
                 timestep=t_val,
+                stoptime=stoptime,
                 global_cond=obs_cond,
-            ).detach()
-
-            # Build LoRA input
-            t_broadcast = t_val.expand(B).view(B, 1, 1).expand(B, T, 1)
-            cond_broadcast = obs_cond.unsqueeze(1).expand(B, T, self.encoding_dim)
-            lora_input = torch.cat(
-                [x.detach(), v_base, t_broadcast, cond_broadcast], dim=-1
             )
-            v_corr = self.lora(lora_input)  # (B, T, 2)
 
-            v_corrected = v_base + self.alpha * v_corr 
+        t_broadcast = t_val.view(B, 1, 1).expand(B, T, 1)
+        cond_broadcast = obs_cond.unsqueeze(1).expand(B, T, self.encoding_dim)
+        lora_input = torch.cat(
+            [x_t.detach(), v_base, t_broadcast, cond_broadcast], dim=-1
+        )
+        v_corr = self.lora(lora_input)
+        v_corrected = v_base + self.alpha * v_corr
 
-            # Weighted loss: later steps matter more
-            w_n = (n + 1) / num_steps
-            step_loss = w_n * F.mse_loss(v_corrected, v_target.detach())
-            total_loss = total_loss + step_loss
-
-            # Advance ODE with base model (detached, no grad through ODE path)
-            with torch.no_grad():
-                x = x + dt * v_base
-
-        return total_loss / num_steps
+        return F.mse_loss(v_corrected, v_target.detach())
 
     def flow_correct_step(
         self, obs_images, goal_images, scorer_fn,
-        num_samples=5, num_steps=10, pred_horizon=8,
+        num_samples=5, pred_horizon=8,
     ):
         """End-to-end: sample → VLM score → select best → flow_edit_loss.
 
@@ -370,11 +356,7 @@ class FlowCorrectWrapper(nn.Module):
             obs_images: (B, C, H, W) observation tensor.
             goal_images: (B, C, H, W) goal tensor.
             scorer_fn: callable(obs_image_np, list_of_pixel_trajs) → list of scores.
-                obs_image_np: (H, W, 3) uint8 numpy array.
-                list_of_pixel_trajs: list of N arrays, each (T, 2) in pixel coords.
-                Returns: list of N float scores.
             num_samples: trajectories per observation.
-            num_steps: ODE integration steps.
             pred_horizon: prediction horizon.
 
         Returns:
@@ -387,7 +369,7 @@ class FlowCorrectWrapper(nn.Module):
             result = self.sample_trajectories(
                 obs_images, goal_images,
                 pred_horizon=pred_horizon, num_samples=num_samples,
-                num_steps=num_steps, use_correction=False,
+                use_correction=False,
             )
 
         obs_cond = result["obs_cond"]
@@ -403,7 +385,7 @@ class FlowCorrectWrapper(nn.Module):
             best_ndeltas.append(ndeltas[b, best_idx])
 
         corrected_action = torch.stack(best_ndeltas, dim=0).to(device)  # (B, T, 2)
-        return self.flow_edit_loss(obs_cond, corrected_action, num_steps=num_steps)
+        return self.flow_edit_loss(obs_cond, corrected_action)
 
     def save_plugin(self, path):
         """Save only LoRA weights."""
@@ -431,90 +413,152 @@ class FlowCorrectWrapper(nn.Module):
             p.requires_grad = False
 
 if __name__ == "__main__":
-    import torch.nn as nn
+    import sys
+    import yaml
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../thirdparty/consistency-policy"))
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../thirdparty/py-meanflow"))
 
-    encoding_dim = 256
-    pred_horizon = 8
-    action_dim = 2
+    from flownav.models.nomad import NoMaD, DenseNetwork
+    from flownav.models.nomad_vint import NoMaD_ViNT, replace_bn_with_gn
+    from meanflownav.models.meanflow_unet1d import MeanFlowConditionalUnet1D
+    from flownav.data.vint_dataset import ViNT_Dataset
+    from torch.utils.data import DataLoader
+    from torchvision import transforms
 
-    class DummyVisionEncoder(nn.Module):
-        def forward(self, obs_img, goal_img, input_goal_mask):
-            B = obs_img.shape[0]
-            return torch.randn(B, encoding_dim)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    project_root = os.path.join(os.path.dirname(__file__), "..")
 
-    class DummyNoisePredNet(nn.Module):
-        def forward(self, sample, timestep, global_cond):
-            return torch.randn_like(sample)
+    config_path = os.path.join(project_root, "meanflownav/config/meanflownav.yaml")
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
 
-    class DummyDistPredNet(nn.Module):
-        def forward(self, x):
-            return torch.randn(x.shape[0], 1)
-
-    from flownav.models.nomad import NoMaD
+    print(">> Building model...")
+    vision_encoder = NoMaD_ViNT(
+        obs_encoding_size=config["encoding_size"],
+        context_size=config["context_size"],
+        mha_num_attention_heads=config["mha_num_attention_heads"],
+        mha_num_attention_layers=config["mha_num_attention_layers"],
+        mha_ff_dim_factor=config["mha_ff_dim_factor"],
+        depth_cfg=config["depth"],
+    )
+    vision_encoder = replace_bn_with_gn(vision_encoder)
+    noise_pred_net = MeanFlowConditionalUnet1D(
+        input_dim=2,
+        global_cond_dim=config["encoding_size"],
+        down_dims=config["down_dims"],
+        cond_predict_scale=config["cond_predict_scale"],
+    )
+    dist_pred_network = DenseNetwork(embedding_dim=config["encoding_size"])
     base_model = NoMaD(
-        vision_encoder=DummyVisionEncoder(),
-        noise_pred_net=DummyNoisePredNet(),
-        dist_pred_net=DummyDistPredNet(),
+        vision_encoder=vision_encoder,
+        noise_pred_net=noise_pred_net,
+        dist_pred_net=dist_pred_network,
     )
 
-    wrapper = FlowCorrectWrapper(base_model, encoding_dim=encoding_dim)
-    print(f"LoRA trainable params: {wrapper.num_trainable_params()}")
+    ckpt_path = os.path.join(project_root, "outputs/logs/meanflownav/meanflownav_2026_04_18_18_00_24/latest.pth")
+    print(f">> Loading checkpoint: {ckpt_path}")
+    state_dict = torch.load(ckpt_path, map_location="cpu")
+    base_model.load_state_dict(state_dict, strict=True)
+    base_model = base_model.to(device)
+    base_model.eval()
+    print(">> Model loaded successfully.")
 
-    # --- Test TrajectoryProjector ---
-    proj = wrapper.projector
-    fake_ndeltas = torch.randn(2, pred_horizon, action_dim)
-    actions = proj.ndeltas_to_actions(fake_ndeltas)
-    print(f"ndeltas_to_actions: {fake_ndeltas.shape} -> {actions.shape}")
+    # Load a real data batch
+    print(">> Loading dataset...")
+    ds_cfg = config["datasets"]["go_stanford"]
+    transform = transforms.Compose([
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    dataset = ViNT_Dataset(
+        data_folder=ds_cfg["data_folder"],
+        data_split_folder=ds_cfg["test"],
+        dataset_name="go_stanford",
+        image_size=config["image_size"],
+        waypoint_spacing=ds_cfg["waypoint_spacing"],
+        min_dist_cat=config["distance"]["min_dist_cat"],
+        max_dist_cat=config["distance"]["max_dist_cat"],
+        min_action_distance=config["action"]["min_dist_cat"],
+        max_action_distance=config["action"]["max_dist_cat"],
+        negative_mining=True,
+        len_traj_pred=config["len_traj_pred"],
+        learn_angle=config["learn_angle"],
+        context_size=config["context_size"],
+        context_type=config["context_type"],
+        end_slack=ds_cfg["end_slack"],
+        goals_per_obs=ds_cfg["goals_per_obs"],
+        normalize=config["normalize"],
+        goal_type=config["goal_type"],
+    )
+    loader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=0)
+    batch = next(iter(loader))
+    obs_images = batch[0].to(device)  # (B, C*context, H, W)
+    goal_images = batch[1].to(device)  # (B, 3, H, W)
+    print(f">> Batch loaded: obs={obs_images.shape}, goal={goal_images.shape}")
 
-    pixels = proj.actions_to_pixels(actions.numpy())
-    print(f"actions_to_pixels: {actions.shape} -> {pixels.shape}")
-    print(f"  pixel range x: [{pixels[..., 0].min():.1f}, {pixels[..., 0].max():.1f}]")
-    print(f"  pixel range y: [{pixels[..., 1].min():.1f}, {pixels[..., 1].max():.1f}]")
+    obs_chunks = torch.split(obs_images, 3, dim=1)
+    obs_images = torch.cat([transform(c) for c in obs_chunks], dim=1)
+    goal_images = transform(goal_images)
 
-    # --- Test sample_trajectories ---
-    B, num_samples = 2, 3
-    obs_images = torch.randn(B, 12, 96, 96)
-    goal_images = torch.randn(B, 3, 96, 96)
+    # Build FlowCorrectWrapper
+    wrapper = FlowCorrectWrapper(base_model, encoding_dim=config["encoding_size"])
+    wrapper = wrapper.to(device)
+    print(f">> LoRA trainable params: {wrapper.num_trainable_params()}")
 
+    # Test sample_trajectories
+    print("\n>> Testing sample_trajectories...")
+    num_samples = 5
     result = wrapper.sample_trajectories(
         obs_images, goal_images,
-        pred_horizon=pred_horizon, num_samples=num_samples, num_steps=5,
+        pred_horizon=config["len_traj_pred"],
+        num_samples=num_samples,
     )
-    print(f"\nsample_trajectories output:")
     print(f"  ndeltas: {result['ndeltas'].shape}")
     print(f"  actions: {result['actions'].shape}")
     print(f"  pixels:  {result['pixels'].shape}")
     print(f"  obs_cond: {result['obs_cond'].shape}")
 
-    # --- Test flow_edit_loss ---
+    # Test flow_edit_loss
+    print("\n>> Testing flow_edit_loss...")
     wrapper.train_lora()
     obs_cond = result["obs_cond"]
-    corrected_action = result["ndeltas"][:, 0]  # pick first trajectory
-    loss = wrapper.flow_edit_loss(obs_cond, corrected_action, num_steps=5)
-    print(f"\nflow_edit_loss: {loss.item():.4f}")
+    corrected_action = result["ndeltas"][:, 0]
+    loss = wrapper.flow_edit_loss(obs_cond, corrected_action)
+    print(f"  loss: {loss.item():.4f}")
     loss.backward()
     grad_norm = sum(p.grad.norm().item() for p in wrapper.trainable_parameters() if p.grad is not None)
-    print(f"LoRA grad norm: {grad_norm:.4f}")
+    print(f"  LoRA grad norm: {grad_norm:.4f}")
 
-    # --- Test flow_correct_step ---
+    # Test flow_correct_step
+    print("\n>> Testing flow_correct_step...")
     def dummy_scorer(obs_np, pixel_trajs):
         return [float(i) for i in range(len(pixel_trajs))]
 
     wrapper.lora.zero_grad()
     loss = wrapper.flow_correct_step(
         obs_images, goal_images, scorer_fn=dummy_scorer,
-        num_samples=num_samples, num_steps=5, pred_horizon=pred_horizon,
+        num_samples=num_samples, pred_horizon=config["len_traj_pred"],
     )
-    print(f"\nflow_correct_step loss: {loss.item():.4f}")
+    print(f"  loss: {loss.item():.4f}")
     loss.backward()
     grad_norm = sum(p.grad.norm().item() for p in wrapper.trainable_parameters() if p.grad is not None)
-    print(f"LoRA grad norm: {grad_norm:.4f}")
+    print(f"  LoRA grad norm: {grad_norm:.4f}")
 
-    # --- Test save/load ---
+    # Test render
+    print("\n>> Testing render...")
+    pixels = result["pixels"]
+    pixel_trajs = [pixels[0, n].cpu().numpy() for n in range(num_samples)]
+    obs_np = batch[0][0, :3].permute(1, 2, 0).numpy()
+    obs_np = (obs_np * 255).clip(0, 255).astype(np.uint8)
+    save_path = os.path.join(project_root, "outputs/test_render.png")
+    wrapper.projector.save_render(obs_np, pixel_trajs, save_path, best_idx=num_samples - 1)
+    print(f"  Saved to {save_path}")
+
+    # Test save/load
     import tempfile
     with tempfile.NamedTemporaryFile(suffix=".pt") as f:
         wrapper.save_plugin(f.name)
         wrapper.load_plugin(f.name)
-        print(f"\nsave/load plugin: OK")
+        print("\n>> save/load plugin: OK")
 
     print("\nAll tests passed.")
