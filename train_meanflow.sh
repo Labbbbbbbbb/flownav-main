@@ -11,7 +11,7 @@ eval "$(conda shell.bash hook)"
 conda activate ${CONDA_ENV}
 
 # ---- Add project paths ----
-export PYTHONPATH="${PYTHONPATH}:$(pwd):$(pwd)/consistency-policy:$(pwd)/py-meanflow"
+export PYTHONPATH="${PYTHONPATH}:$(pwd):$(pwd)/thirdparty/consistency_policy:$(pwd)/thirdparty/py-meanflow"
 
 # ---- Run ----
 CUDA_VISIBLE_DEVICES=${GPU_ID} python train_meanflow.py --config ${CONFIG}

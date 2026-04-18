@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 import os
 import yaml
+from PIL import Image, ImageDraw, ImageFont
+from constant import TRAJ_COLORS
 
 class TrajectoryProjector:
     """Handles action space conversions and camera projection.
@@ -113,6 +115,53 @@ class TrajectoryProjector:
         uv[..., 0] = np.clip(uv[..., 0], 0, w)
         uv[..., 1] = np.clip(uv[..., 1], 0, h)
         return uv
+
+    def render(self, obs_image, pixel_trajs, best_idx=None):
+        """Draw trajectories on observation image.
+
+        Args:
+            obs_image: PIL Image or numpy array (H, W, 3) uint8.
+            pixel_trajs: list of N arrays, each (T, 2) in pixel coords.
+            best_idx: if set, highlight this trajectory with thicker line.
+
+        Returns:
+            PIL Image with trajectories drawn.
+        """
+        if isinstance(obs_image, np.ndarray):
+            obs_image = Image.fromarray(obs_image)
+        img = obs_image.copy().convert("RGB")
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
+        except (IOError, OSError):
+            font = ImageFont.load_default()
+
+        for idx, traj in enumerate(pixel_trajs):
+            color = TRAJ_COLORS[idx % len(TRAJ_COLORS)]
+            points = [(float(x), float(y)) for x, y in traj]
+            width = 5 if idx == best_idx else 2
+            if len(points) >= 2:
+                draw.line(points, fill=color, width=width)
+            for pt in points:
+                r = 4 if idx == best_idx else 2
+                draw.ellipse([pt[0] - r, pt[1] - r, pt[0] + r, pt[1] + r], fill=color)
+            if points:
+                draw.text((points[-1][0] + 5, points[-1][1] - 7), str(idx + 1), fill=color, font=font)
+        return img
+
+    def save_render(self, obs_image, pixel_trajs, save_path, best_idx=None):
+        """Render trajectories on image and save to disk.
+
+        Args:
+            obs_image: PIL Image or numpy array (H, W, 3) uint8.
+            pixel_trajs: list of N arrays, each (T, 2) in pixel coords.
+            save_path: output file path (e.g. "output.png").
+            best_idx: if set, highlight this trajectory.
+        """
+        img = self.render(obs_image, pixel_trajs, best_idx=best_idx)
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        img.save(save_path)
+        return img
 
 
 class FlowCorrectWrapper(nn.Module):
@@ -382,8 +431,90 @@ class FlowCorrectWrapper(nn.Module):
             p.requires_grad = False
 
 if __name__ == "__main__":
-    # Quick test: instantiate wrapper and check trainable params
+    import torch.nn as nn
+
+    encoding_dim = 256
+    pred_horizon = 8
+    action_dim = 2
+
+    class DummyVisionEncoder(nn.Module):
+        def forward(self, obs_img, goal_img, input_goal_mask):
+            B = obs_img.shape[0]
+            return torch.randn(B, encoding_dim)
+
+    class DummyNoisePredNet(nn.Module):
+        def forward(self, sample, timestep, global_cond):
+            return torch.randn_like(sample)
+
+    class DummyDistPredNet(nn.Module):
+        def forward(self, x):
+            return torch.randn(x.shape[0], 1)
+
     from flownav.models.nomad import NoMaD
-    base_model = NoMaD()
-    wrapper = FlowCorrectWrapper(base_model)
-    print(f"Total trainable parameters in LoRA: {wrapper.num_trainable_params()}")
+    base_model = NoMaD(
+        vision_encoder=DummyVisionEncoder(),
+        noise_pred_net=DummyNoisePredNet(),
+        dist_pred_net=DummyDistPredNet(),
+    )
+
+    wrapper = FlowCorrectWrapper(base_model, encoding_dim=encoding_dim)
+    print(f"LoRA trainable params: {wrapper.num_trainable_params()}")
+
+    # --- Test TrajectoryProjector ---
+    proj = wrapper.projector
+    fake_ndeltas = torch.randn(2, pred_horizon, action_dim)
+    actions = proj.ndeltas_to_actions(fake_ndeltas)
+    print(f"ndeltas_to_actions: {fake_ndeltas.shape} -> {actions.shape}")
+
+    pixels = proj.actions_to_pixels(actions.numpy())
+    print(f"actions_to_pixels: {actions.shape} -> {pixels.shape}")
+    print(f"  pixel range x: [{pixels[..., 0].min():.1f}, {pixels[..., 0].max():.1f}]")
+    print(f"  pixel range y: [{pixels[..., 1].min():.1f}, {pixels[..., 1].max():.1f}]")
+
+    # --- Test sample_trajectories ---
+    B, num_samples = 2, 3
+    obs_images = torch.randn(B, 12, 96, 96)
+    goal_images = torch.randn(B, 3, 96, 96)
+
+    result = wrapper.sample_trajectories(
+        obs_images, goal_images,
+        pred_horizon=pred_horizon, num_samples=num_samples, num_steps=5,
+    )
+    print(f"\nsample_trajectories output:")
+    print(f"  ndeltas: {result['ndeltas'].shape}")
+    print(f"  actions: {result['actions'].shape}")
+    print(f"  pixels:  {result['pixels'].shape}")
+    print(f"  obs_cond: {result['obs_cond'].shape}")
+
+    # --- Test flow_edit_loss ---
+    wrapper.train_lora()
+    obs_cond = result["obs_cond"]
+    corrected_action = result["ndeltas"][:, 0]  # pick first trajectory
+    loss = wrapper.flow_edit_loss(obs_cond, corrected_action, num_steps=5)
+    print(f"\nflow_edit_loss: {loss.item():.4f}")
+    loss.backward()
+    grad_norm = sum(p.grad.norm().item() for p in wrapper.trainable_parameters() if p.grad is not None)
+    print(f"LoRA grad norm: {grad_norm:.4f}")
+
+    # --- Test flow_correct_step ---
+    def dummy_scorer(obs_np, pixel_trajs):
+        return [float(i) for i in range(len(pixel_trajs))]
+
+    wrapper.lora.zero_grad()
+    loss = wrapper.flow_correct_step(
+        obs_images, goal_images, scorer_fn=dummy_scorer,
+        num_samples=num_samples, num_steps=5, pred_horizon=pred_horizon,
+    )
+    print(f"\nflow_correct_step loss: {loss.item():.4f}")
+    loss.backward()
+    grad_norm = sum(p.grad.norm().item() for p in wrapper.trainable_parameters() if p.grad is not None)
+    print(f"LoRA grad norm: {grad_norm:.4f}")
+
+    # --- Test save/load ---
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".pt") as f:
+        wrapper.save_plugin(f.name)
+        wrapper.load_plugin(f.name)
+        print(f"\nsave/load plugin: OK")
+
+    print("\nAll tests passed.")
