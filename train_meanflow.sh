@@ -4,14 +4,14 @@
 # ---- Config ----
 CONDA_ENV="flownav"
 CONFIG="meanflownav/config/meanflownav.yaml"
-GPU_ID=0
+GPU_ID=6
 
 # ---- Activate environment ----
 eval "$(conda shell.bash hook)"
 conda activate ${CONDA_ENV}
 
 # ---- Add project paths ----
-export PYTHONPATH="${PYTHONPATH}:$(pwd):$(pwd)/thirdparty/consistency_policy:$(pwd)/thirdparty/py-meanflow"
+export PYTHONPATH="${PYTHONPATH}:$(pwd):$(pwd)/thirdparty/consistency-policy:$(pwd)/thirdparty/py-meanflow"
 
 # ---- Run ----
 CUDA_VISIBLE_DEVICES=${GPU_ID} python train_meanflow.py --config ${CONFIG}
