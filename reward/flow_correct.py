@@ -155,7 +155,7 @@ class FlowCorrectWrapper(nn.Module):
     def forward(self, func_name, **kwargs):
         """Drop-in replacement for NoMaD.forward()."""
         if func_name == "noise_pred_net":
-            return self._corrected_velocity(**kwargs)
+            return self._corrected_velocity(**kwargs)   #兼容nomad的三部分网络，只对动作输出头做修正
         return self.base_model(func_name, **kwargs)
 
     def _corrected_velocity(self, sample, timestep, global_cond, **_):
@@ -172,7 +172,7 @@ class FlowCorrectWrapper(nn.Module):
             )
 
         # Build LoRA input: (sample, v_base, t, cond) along last dim
-        if isinstance(timestep, (int, float)):
+        if isinstance(timestep, (int, float)):  #统一把时间步转换为(B, 1)广播形式tensor
             t_val = torch.tensor(timestep, device=sample.device, dtype=sample.dtype)
             t_val = t_val.expand(B)
         elif timestep.dim() == 0:
@@ -180,7 +180,7 @@ class FlowCorrectWrapper(nn.Module):
         else:
             t_val = timestep
 
-        t_broadcast = t_val.view(B, 1, 1).expand(B, T, 1)
+        t_broadcast = t_val.view(B, 1, 1).expand(B, T, 1)  # (B, T, 1)，此处T不是flow过程中的不同时间步，而是Horizon维度的重复
         cond_broadcast = global_cond.unsqueeze(1).expand(B, T, self.encoding_dim)
         lora_input = torch.cat([sample, v_base, t_broadcast, cond_broadcast], dim=-1)
 
@@ -224,14 +224,14 @@ class FlowCorrectWrapper(nn.Module):
             "vision_encoder",
             obs_img=obs_images,
             goal_img=goal_images,
-            input_goal_mask=no_mask,
+            input_goal_mask=no_mask,        #强制不使用mask,即有目标导航
         )
-        obs_cond_rep = obs_cond.repeat_interleave(num_samples, dim=0)
+        obs_cond_rep = obs_cond.repeat_interleave(num_samples, dim=0)  # (B*N, encoding_dim) 这行是把视觉条件编码复制 N 份，让每个观测对应 N 条候选轨迹。
 
         x = torch.randn(B * num_samples, pred_horizon, action_dim, device=device)
         ts = torch.linspace(0, 1, num_steps, device=device)
 
-        forward_fn = self if use_correction else self.base_model
+        forward_fn = self if use_correction else self.base_model        #self=self.base_model加一层correction—wrapper
         traj = torchdiffeq.odeint(
             lambda t, x_t: forward_fn(
                 "noise_pred_net", sample=x_t, timestep=t, global_cond=obs_cond_rep
@@ -298,7 +298,7 @@ class FlowCorrectWrapper(nn.Module):
             )
             v_corr = self.lora(lora_input)  # (B, T, 2)
 
-            v_corrected = v_base + self.alpha * v_corr 
+            v_corrected = v_base + self.alpha * v_corr      #每一个NFE都进行correction
 
             # Weighted loss: later steps matter more
             w_n = (n + 1) / num_steps
@@ -307,7 +307,7 @@ class FlowCorrectWrapper(nn.Module):
 
             # Advance ODE with base model (detached, no grad through ODE path)
             with torch.no_grad():
-                x = x + dt * v_base
+                x = x + dt * v_base         #为什么这里的x不用v_corrected来ODE？
 
         return total_loss / num_steps
 
@@ -346,12 +346,12 @@ class FlowCorrectWrapper(nn.Module):
         pixels = result["pixels"]       # (B, N, T, 2)
 
         best_ndeltas = []
-        for b in range(B):
+        for b in range(B):      #对每一个batch，用scorer_fn评估N条轨迹，选分数最高的那条的ndeltas作为训练目标
             pixel_trajs = [pixels[b, n].cpu().numpy() for n in range(num_samples)]
             obs_np = (obs_images[b].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
             scores = scorer_fn(obs_np, pixel_trajs)
             best_idx = int(np.argmax(scores))
-            best_ndeltas.append(ndeltas[b, best_idx])
+            best_ndeltas.append(ndeltas[b, best_idx])       #得到batch个best—trajs
 
         corrected_action = torch.stack(best_ndeltas, dim=0).to(device)  # (B, T, 2)
         return self.flow_edit_loss(obs_cond, corrected_action, num_steps=num_steps)

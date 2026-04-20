@@ -157,3 +157,5 @@ conditional-flow-matching/
 recon_release/*
 data_splits/*
 wandb/*
+
+DataSet/
