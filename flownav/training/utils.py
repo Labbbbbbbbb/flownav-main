@@ -155,7 +155,7 @@ def get_delta(actions: np.ndarray) -> np.ndarray:
 
 def get_action(ndeltas, action_stats=ACTION_STATS) -> torch.Tensor:
     device = ndeltas.device
-    ndeltas = ndeltas.reshape(ndeltas.shape[0], -1, 2)
+    ndeltas = ndeltas.reshape(ndeltas.shape[0], -1, 2)  #中间自适应的维度是horizon
     ndeltas = to_numpy(ndeltas)
     ndeltas = unnormalize_data(ndeltas, action_stats)
     actions = np.cumsum(ndeltas, axis=1)

@@ -43,7 +43,7 @@ def model_output(
     device: torch.device,
     use_wandb: bool,
     return_action_stages: bool = False,
-    stage_ratios: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0),
+    stage_ratios: tuple[float, ...] = (0.0, 1.0),   #one-step.仅仅展示初始高斯动作和最终 MeanFlow 动作的演化轨迹
 ) -> dict[str, torch.Tensor]:
     """One-step MeanFlow inference, replacing 10-step ODE integration."""
 
@@ -58,7 +58,7 @@ def model_output(
         goal_img=batch_goal_images,
         input_goal_mask=goal_mask,
     )
-    obs_cond = obs_cond.repeat_interleave(num_samples, dim=0)
+    obs_cond = obs_cond.repeat_interleave(num_samples, dim=0)#从这里开始已经是B*num_samples的维度了，后续生成的动作也是这个维度，最后可视化时再切分回B块，每块num_samples条轨迹
 
     # Navigation (no mask)
     no_mask = torch.zeros((batch_goal_images.shape[0],)).long().to(device)
@@ -100,7 +100,9 @@ def model_output(
         gc_actions = get_action(e - u, ACTION_STATS)
         if return_action_stages:
             gc_action_stages = [
-                get_action(e - ratio * u, ACTION_STATS) for ratio in stage_ratios
+                get_action(e - ratio * u, ACTION_STATS)[:,-1,:] for ratio in stage_ratios   
+                #(2,B*num_samples,2)  第一个维度是flow的stages，第一个是白噪声作为ndeltas得到的action，第二个是MeanFlow最终输出的action
+                #这里取出的是每条轨迹最终cumsum的动作，因为可视化只能实现平面二维数据，所以只能选取两个维度的动作进行展示
             ]
 
         proc_time = time.time() - start_time
@@ -203,6 +205,217 @@ def compute_losses(
 
 
 
+def visualize_flow_stage_distribution(
+    ema_model: nn.Module,           # EMA 平均后的模型，用于推理（比瞬时模型更稳定）
+    batch_obs_images: torch.Tensor, # 经过 transform 的观测图像，用于模型输入，shape (B, C*context, H, W)
+    batch_goal_images: torch.Tensor,# 经过 transform 的目标图像，用于模型输入，shape (B, C, H, W)
+    
+    batch_action_label: torch.Tensor,    # ground truth 动作轨迹，shape (B, pred_horizon, action_dim)
+
+    device: torch.device,
+    eval_type: str,          # 评估类型字符串（如 "train"/"val"），用于区分保存路径和 wandb key
+    project_folder: str,     # 项目根目录，可视化图片保存在其下的 visualize/ 子目录
+    epoch: int,              # 当前 epoch，用于构建保存路径
+    num_images_log: int,     # 最多可视化的样本数量上限
+    num_samples: int = 30,   # 每个样本生成的预测轨迹条数（越多统计越稳，但推理越慢）
+    use_wandb: bool = True,  # 是否将图片上传到 Weights & Biases
+    flow_stage_cache=None,   # 外部传入的缓存，用于跨 batch 累积 flow stage 过程
+    stage_ratios: tuple[float, ...] = (0.0, 1.0),
+    finalize: bool = False,  # 为 True 时对当前缓存出一张汇总图
+):
+    ema_model.eval()  # 切换到评估模式，关闭 dropout 和 batchnorm 等训练特有行为
+
+    has_external_cache = flow_stage_cache is not None
+
+    if flow_stage_cache is None:
+        flow_stage_cache = {
+            "stage_ratios": np.array(stage_ratios, dtype=np.float32),
+            "batch_stage_paths": [],
+            "batch_size_history": [],
+        }
+
+    stage_ratios_np = np.array(stage_ratios, dtype=np.float32)
+
+    num_images_log = min(
+        batch_obs_images.shape[0],
+        batch_goal_images.shape[0],
+        batch_action_label.shape[0],
+    )
+    batch_obs_images = batch_obs_images[:num_images_log]
+    batch_goal_images = batch_goal_images[:num_images_log]
+    batch_action_label = batch_action_label[:num_images_log]
+
+    pred_horizon = batch_action_label.shape[1]
+    action_dim = batch_action_label.shape[2]
+    gc_action_stages_list = [[] for _ in stage_ratios]
+
+    model_output_dict = model_output(
+        model=ema_model,
+        batch_obs_images=batch_obs_images,
+        batch_goal_images=batch_goal_images,
+        pred_horizon=pred_horizon,
+        action_dim=action_dim,
+        num_samples=num_samples,
+        device=device,
+        use_wandb=use_wandb,
+        return_action_stages=True,
+        stage_ratios=tuple(float(x) for x in stage_ratios_np),
+    )
+
+    for stage_idx, stage_action in enumerate(model_output_dict["gc_action_stages"]):
+            #把当前 batch 的 (B, 2) 动作数组追加到对应 stage 的收集列表里。
+            gc_action_stages_list[stage_idx].append(to_numpy(stage_action))
+    if len(gc_action_stages_list) == 0:
+        return flow_stage_cache
+    
+    for stage_idx in range(len(gc_action_stages_list)):         
+        gc_action_stages_list[stage_idx] = np.concatenate(
+            gc_action_stages_list[stage_idx], axis=0
+        )
+
+    gc_action_flow_traj = np.array([np.array(s) for s in gc_action_stages_list])  # (len(stage_ratios), num_images_log*num_samples, 2)
+    gc_action_flow_traj = gc_action_flow_traj.transpose(1,0,2)  # (num_images_log*num_samples, len(stage_ratios), 2)
+
+
+    for traj in gc_action_flow_traj:  
+        flow_stage_cache["batch_stage_paths"].append(traj)
+
+    flow_stage_cache["batch_size_history"].append(int(num_images_log))
+
+    should_finalize = finalize or not has_external_cache
+    if not should_finalize:
+        return flow_stage_cache
+
+    gc_action_flow_traj = flow_stage_cache["batch_stage_paths"]
+    if len(gc_action_flow_traj) == 0:
+        return flow_stage_cache
+
+
+    visualize_path = os.path.join(
+        project_folder,
+        "visualize",
+        eval_type,
+        f"epoch{epoch}",
+        "flow_stage_process",
+    )
+    os.makedirs(visualize_path, exist_ok=True)
+
+    stage_colors = plt.cm.viridis(np.linspace(0.1, 0.9, len(stage_ratios_np)))
+    fig, ax = plt.subplots(1, 1, figsize=(9.0, 7.5))
+
+    plot_trajs_and_points(
+            ax=ax,
+            list_trajs=gc_action_flow_traj,
+            list_points=[gc_action_flow_traj[j][-1] for j in range(len(gc_action_flow_traj))],  # 最后一个动作点和目标位置
+            traj_colors=["green"] * len(gc_action_flow_traj),
+            point_colors=["magenta"] + ["red"] * len(gc_action_flow_traj),
+            traj_labels=None,
+            point_labels=None,
+            quiver_freq=0,
+            point_alphas=[1.0] * (1 + len(gc_action_flow_traj)),
+            traj_alphas=[0.5] * len(gc_action_flow_traj),
+    )
+
+    save_path = os.path.join(visualize_path, "flow_stage_summary.png")
+    plt.savefig(save_path, bbox_inches="tight")
+    if use_wandb:
+        wandb.log({f"{eval_type}_flow_stage_summary": wandb.Image(save_path)}, commit=False)
+    plt.close(fig)
+    return flow_stage_cache
+
+    # for batch_path in batch_stage_paths:
+    #     ax[0].plot(
+    #         batch_path[:, 0],
+    #         batch_path[:, 1],
+    #         color="0.75",
+    #         alpha=0.35,
+    #         linewidth=1.0,
+    #         marker="o",
+    #         markersize=3.0,
+    #     )
+
+    # ax[0].plot(
+    #     mean_stage_path[:, 0],
+    #     mean_stage_path[:, 1],
+    #     color="black",
+    #     linewidth=2.2,
+    #     alpha=0.9,
+    #     zorder=3,
+    # )
+    # for stage_idx, stage_ratio in enumerate(stage_ratios_np):
+    #     ax[0].scatter(
+    #         mean_stage_path[stage_idx, 0],
+    #         mean_stage_path[stage_idx, 1],
+    #         s=60,
+    #         color=stage_colors[stage_idx],
+    #         zorder=4,
+    #         label=f"t={stage_ratio:.2f}",
+    #     )
+    #     if stage_idx > 0:
+    #         ax[0].annotate(
+    #             "",
+    #             xy=mean_stage_path[stage_idx],
+    #             xytext=mean_stage_path[stage_idx - 1],
+    #             arrowprops=dict(
+    #                 arrowstyle="->",
+    #                 color=stage_colors[stage_idx],
+    #                 lw=1.8,
+    #                 alpha=0.9,
+    #             ),
+    #         )
+    # ax[0].set_title("flow stage path across batches")
+    # ax[0].set_xlabel("action x")
+    # ax[0].set_ylabel("action y")
+    # ax[0].grid(alpha=0.2)
+    # ax[0].set_aspect("equal", "box")
+    # ax[0].legend(bbox_to_anchor=(0.0, -0.25), loc="upper left", ncol=2)
+
+    # ax[1].plot(
+    #     stage_ratios_np,
+    #     mean_stage_path[:, 0],
+    #     color="tab:blue",
+    #     marker="o",
+    #     label="x mean",
+    # )
+    # ax[1].fill_between(
+    #     stage_ratios_np,
+    #     mean_stage_path[:, 0] - std_stage_path[:, 0],
+    #     mean_stage_path[:, 0] + std_stage_path[:, 0],
+    #     color="tab:blue",
+    #     alpha=0.15,
+    # )
+    # ax[1].plot(
+    #     stage_ratios_np,
+    #     mean_stage_path[:, 1],
+    #     color="tab:orange",
+    #     marker="o",
+    #     label="y mean",
+    # )
+    # ax[1].fill_between(
+    #     stage_ratios_np,
+    #     mean_stage_path[:, 1] - std_stage_path[:, 1],
+    #     mean_stage_path[:, 1] + std_stage_path[:, 1],
+    #     color="tab:orange",
+    #     alpha=0.15,
+    # )
+    # ax[1].set_title("stage-wise action statistics")
+    # ax[1].set_xlabel("stage ratio")
+    # ax[1].set_ylabel("action value")
+    # ax[1].grid(alpha=0.2)
+    # ax[1].legend()
+
+    # fig.suptitle(
+    #     f"{eval_type} epoch={epoch} batches={total_batches} samples={total_samples}",
+    #     y=1.02,
+    # )
+    # fig.set_size_inches(18.0, 7.5)
+    # fig.tight_layout()
+
+    
+    # return flow_stage_cache
+
+
+
 def visualize_action_distribution(
     ema_model: nn.Module,           # EMA 平均后的模型，用于推理（比瞬时模型更稳定）
     batch_obs_images: torch.Tensor, # 经过 transform 的观测图像，用于模型输入，shape (B, C*context, H, W)
@@ -263,7 +476,7 @@ def visualize_action_distribution(
     uc_actions_list = []   # 无条件（探索模式）预测轨迹
     gc_actions_list = []   # 有目标条件（导航模式）预测轨迹
     gc_distances_list = [] # 有目标条件下预测的距离值
-    stage_ratios = np.array([0.0, 0.25, 0.5, 0.75, 1.0], dtype=np.float32)
+    stage_ratios = np.array([0.0, 1.0], dtype=np.float32)   # 仅可视化初始高斯动作（t=0）和最终 MeanFlow 动作（t=1），中间阶段不绘制,以突出对比,如果是多NFES，这里应有中间分段
     gc_action_stages_list = [[] for _ in stage_ratios]
 
     # 遍历各子块，调用 model_output 进行推理
@@ -285,6 +498,7 @@ def visualize_action_distribution(
         gc_actions_list.append(to_numpy(model_output_dict["gc_actions"]))
         gc_distances_list.append(to_numpy(model_output_dict["gc_distance"]))
         for stage_idx, stage_action in enumerate(model_output_dict["gc_action_stages"]):
+            #把当前 batch 的 (B, 2) 动作数组追加到对应 stage 的收集列表里。
             gc_action_stages_list[stage_idx].append(to_numpy(stage_action))
 
     # 将各子块结果沿 axis=0 拼接，得到完整的预测结果数组
@@ -298,13 +512,17 @@ def visualize_action_distribution(
     uc_actions_list = np.split(uc_actions_list, num_images_log, axis=0)
     gc_actions_list = np.split(gc_actions_list, num_images_log, axis=0)
     gc_distances_list = np.split(gc_distances_list, num_images_log, axis=0)
-    for stage_idx in range(len(gc_action_stages_list)):
+    for stage_idx in range(len(gc_action_stages_list)):         
         gc_action_stages_list[stage_idx] = np.concatenate(
             gc_action_stages_list[stage_idx], axis=0
         )
-        gc_action_stages_list[stage_idx] = np.split(
-            gc_action_stages_list[stage_idx], num_images_log, axis=0
+        gc_action_stages_list[stage_idx] = np.split(    #因为上文的截断，这里num_images_log实际上就是batchsize
+            gc_action_stages_list[stage_idx], num_images_log, axis=0  #是一个 list，长度 num_images_log，每个元素 shape (num_samples, 2)
         )
+    #gc_action_stages_list：(len(stage_ratios), num_images_log, num_samples, 2)
+    gc_action_flow_traj = np.array([np.array(s) for s in gc_action_stages_list])  # (len(stage_ratios), num_images_log, num_samples, 2)
+    gc_action_flow_traj = gc_action_flow_traj.transpose(1, 2, 0, 3)  # (num_images_log, num_samples, len(stage_ratios), 2)
+    # print('gc_action_flow_traj shape:', gc_action_flow_traj.shape)  #（8,4,2,2）
     # 计算每个样本的距离预测均值和标准差，用于图标题显示
     gc_distances_avg = [np.mean(dist) for dist in gc_distances_list]
     gc_distances_std = [np.std(dist) for dist in gc_distances_list]
@@ -352,32 +570,46 @@ def visualize_action_distribution(
             point_alphas=point_alphas,
         )
 
-        # 在最左侧子图单独可视化 MeanFlow 从高斯动作 (t=0) 到最终动作 (t=1) 的演化轨迹
-        stage_point_list = [np.array([0, 0]), to_numpy(batch_goal_pos[i])]
+        #在最左侧子图单独可视化 MeanFlow 从高斯动作 (t=0) 到最终动作 (t=1) 的演化轨迹
+        # stage_point_list = [np.array([0, 0]), to_numpy(batch_goal_pos[i])]
         plot_trajs_and_points(
             ax=ax[0],
-            list_trajs=[],
-            list_points=stage_point_list,
-            point_colors=["green", "red"],
+            list_trajs=gc_action_flow_traj[i],
+            list_points=[action_label[-1]]+[gc_action_flow_traj[i][j][-1] for j in range(len(gc_action_flow_traj[i]))],  # 最后一个动作点和目标位置
+            traj_colors=["green"] * len(gc_action_flow_traj[i]),
+            point_colors=["magenta"] + ["red"] * len(gc_action_flow_traj[i]),
             traj_labels=None,
-            point_labels=["robot", "goal"],
+            point_labels=["label_action"] + ["output_final_action"] * len(gc_action_flow_traj[i]),
             quiver_freq=0,
-            point_alphas=[1.0, 1.0],
+            point_alphas=[1.0] * (1 + len(gc_action_flow_traj[i])),
+            traj_alphas=[0.5] * len(gc_action_flow_traj[i]),
         )
-        stage_colors = plt.cm.plasma(np.linspace(0.1, 0.9, len(stage_ratios)))
-        for stage_idx, stage_ratio in enumerate(stage_ratios):
-            stage_actions = gc_action_stages_list[stage_idx][i]
-            stage_mean_action = np.mean(stage_actions, axis=0)
-            ax[0].plot(
-                stage_mean_action[:, 0],
-                stage_mean_action[:, 1],
-                color=stage_colors[stage_idx],
-                linewidth=2.0,
-                linestyle="--" if stage_idx < len(stage_ratios) - 1 else "-",
-                alpha=0.95,
-                label=f"gc t={stage_ratio:.2f}",
-                marker="o",
-            )
+        # for sample_traj in gc_action_flow_traj[i]:  # sample_traj: (len(stage_ratios), 2)
+        #     for seg_idx in range(len(sample_traj) - 1):
+        #         t = seg_idx / max(len(sample_traj) - 2, 1)  # 0→1
+        #         color = (1 - t, t, 0)  # 红→绿渐变
+        #         ax[0].plot(
+        #             sample_traj[seg_idx:seg_idx+2, 0],
+        #             sample_traj[seg_idx:seg_idx+2, 1],
+        #             color=color, linewidth=1.5, alpha=0.6, marker="o", markersize=3,
+        #         )
+
+        print('gc_action_flow_traj[i] shape:', gc_action_flow_traj[i].shape)  #（num_samples, len(stage_ratios), 2）
+        print('traj_list shape:', traj_list.shape)
+        # stage_colors = plt.cm.plasma(np.linspace(0.1, 0.9, len(stage_ratios)))
+        # for stage_idx, stage_ratio in enumerate(stage_ratios):
+        #     stage_actions = gc_action_stages_list[stage_idx][i]
+        #     stage_mean_action = np.mean(stage_actions, axis=0)
+        #     ax[0].plot(
+        #         stage_mean_action[:, 0],
+        #         stage_mean_action[:, 1],
+        #         color=stage_colors[stage_idx],
+        #         linewidth=2.0,
+        #         linestyle="--" if stage_idx < len(stage_ratios) - 1 else "-",
+        #         alpha=0.95,
+        #         label=f"gc t={stage_ratio:.2f}",
+        #         marker="o",
+        #     )
         ax[0].legend(bbox_to_anchor=(0.0, -0.5), loc="upper left", ncol=2)
         # 将观测和目标图像从 (C, H, W) 转为 (H, W, C)，imshow 需要 channel-last 格式
         obs_image = to_numpy(batch_viz_obs_images[i])

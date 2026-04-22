@@ -28,6 +28,7 @@ from flownav.training.logger import Logger
 # )
 from meanflownav.training.utils import compute_losses
 from meanflownav.training.utils import visualize_action_distribution
+from meanflownav.training.utils import visualize_flow_stage_distribution
 
 def evaluate(
     eval_type: str,
@@ -162,3 +163,16 @@ def evaluate(
                     num_samples=4,
                     use_wandb=use_wandb,
                 )
+                visualize_flow_stage_distribution(
+                    ema_model=ema_model,
+                    batch_obs_images=batch_obs_images,
+                    batch_goal_images=batch_goal_images,
+                    batch_action_label=actions,
+                    device=device,
+                    eval_type="train",
+                    project_folder=project_folder,
+                    epoch=epoch,
+                    num_images_log=num_images_log,
+                    num_samples=4,
+                    use_wandb=use_wandb,
+                )       
