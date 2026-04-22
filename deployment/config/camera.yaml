@@ -1,0 +1,24 @@
+# Camera intrinsics for trajectory projection
+# Obtain these via OpenCV camera calibration:
+# https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html
+
+deploy:
+  camera_metrics:
+    # physical mounting
+    camera_height: 0.95      # camera height above ground (meters)
+    camera_x_offset: 0.45    # distance from robot center to camera along forward axis (meters)
+
+    # intrinsic matrix (from calibration)
+    camera_matrix:
+      fx: 272.547   # focal length x (pixels)
+      fy: 266.358   # focal length y (pixels)
+      cx: 320.0     # principal point x (pixels)
+      cy: 220.0     # principal point y (pixels)
+
+    # distortion coefficients (from calibration, set to 0 if unknown)
+    dist_coeffs:
+      k1: -0.038483  # radial distortion
+      k2: -0.010456  # radial distortion
+      p1: 0.003930   # tangential distortion
+      p2: -0.001007  # tangential distortion
+      k3: 0.0        # radial distortion
