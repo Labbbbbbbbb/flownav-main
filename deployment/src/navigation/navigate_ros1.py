@@ -103,15 +103,15 @@ def main(args):
         if len(context_queue) > context_size:
             # 预处理观测图像
             obs_images = transform_images(context_queue, model_params["image_size"], center_crop=False)
-            obs_images = torch.split(obs_images, 3, dim=1)
+            obs_images = torch.split(obs_images, 3, dim=1)  #因为拼接是在通道维度上，所以这里按3在dim=1上分割
             obs_images = torch.cat(obs_images, dim=1).to(device)
             mask = torch.zeros(1).long().to(device)
 
-            # 局部搜索范围（Radius）
+            # 局部搜索范围（Radius）（要求topomap的图片是有序的）
             start = max(closest_node - args.radius, 0)
             end = min(closest_node + args.radius + 1, goal_node)
             
-            # 预处理目标节点图像
+            # 预处理目标节点图像 即在当前位置上可以作为下一个目标的图片
             goal_images = [transform_images(g_img, model_params["image_size"], center_crop=False).to(device) 
                            for g_img in topomap[start:end + 1]]
             goal_images = torch.concat(goal_images, dim=0)
@@ -125,12 +125,14 @@ def main(args):
                 
                 dists = model("dist_pred_net", obsgoal_cond=obsgoal_cond)
                 dists = to_numpy(dists.flatten())
-                min_idx = np.argmin(dists)
-                closest_node = min_idx + start
+                min_idx = np.argmin(dists)  #返回的是当前窗口中的索引
+                closest_node = min_idx + start  #转换为全局索引
+                #closest_node用来判断当前的位置在哪，同时为更新下一轮搜索窗口中心、判断是否到达终点
                 
-                # 选取局部目标点
+                # 选取局部目标点 本轮动作生成用的子目标索引
+                #如果当前的目标的dist已经小于阈值了就跨到下一个目标
                 sg_idx = min(min_idx + int(dists[min_idx] < args.close_threshold), len(obsgoal_cond) - 1)
-                obs_cond = obsgoal_cond[sg_idx].unsqueeze(0)
+                obs_cond = obsgoal_cond[sg_idx].unsqueeze(0)  #从局部窗口中选取一个目标条件作为动作生成的输入
                 
                 if len(obs_cond.shape) == 2:
                     obs_cond = obs_cond.repeat(args.num_samples, 1)
@@ -147,11 +149,12 @@ def main(args):
                     torch.linspace(0, 1, args.k_steps, device=device),
                     atol=1e-4, rtol=1e-4, method="euler",
                 )
+                #traj:[num_steps, num_samples, len_traj_pred, 2]
                 naction = traj[-1] # 取最终解
                 naction = to_numpy(get_action(naction))
                 
                 # 发布第一个样本的指定 waypoint
-                chosen_waypoint = naction[0][args.waypoint]
+                chosen_waypoint = naction[0][args.waypoint]  #直接取第一个样本，可以加入api进行选择
 
             print(f"[NAV] 最近节点: {closest_node} | 距离: {dists[min_idx]:.2f} | 目标: {goal_node}")
 

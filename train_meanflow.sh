@@ -9,7 +9,7 @@ GPU_ID=0
 # ---- Activate environment ----
 # eval "$(conda shell.bash hook)"
 # conda activate ${CONDA_ENV}
-source $(pwd)/.venv/bin/activate
+# source $(pwd)/.venv/bin/activate
 
 # ---- Add project paths ----
 export PYTHONPATH="${PYTHONPATH}:$(pwd):$(pwd)/consistency-policy:$(pwd)/py-meanflow"
