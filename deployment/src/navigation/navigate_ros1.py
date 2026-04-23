@@ -21,6 +21,11 @@ import torchdiffeq
 from flownav.training.utils import get_action
 from utils import to_numpy, transform_images, load_model, msg_to_pil
 
+# Flow_Correct /VLM Scorer 组件
+from reward.flow_correct import FlowCorrectWrapper
+from reward.flow_correct import TrajectoryProjector
+from reward.vlm_trajectory_scorer import VLMTrajectoryScorer
+
 # 配置路径（请根据你的实际情况检查这些路径）
 TOPOMAP_IMAGES_DIR = "../../topomaps/images"
 ROBOT_CONFIG_PATH = "../../config/robot.yaml"
@@ -87,7 +92,11 @@ def main(args):
     closest_node = 0
     goal_node = len(topomap) - 1 if args.goal_node == -1 else args.goal_node
     
-    # 4. ROS 1 节点初始化
+    # 4. Scorer初始化
+    Trajprojector = TrajectoryProjector(dataset_name="deploy")
+    Scorer=VLMTrajectoryScorer()
+
+    # 5. ROS 1 节点初始化
     rospy.init_node("MEANFLOW_NAVIGATION", anonymous=False)
     rospy.Subscriber(IMAGE_TOPIC, Image, callback_obs, queue_size=1)
     waypoint_pub = rospy.Publisher(WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
@@ -149,9 +158,22 @@ def main(args):
                 )
                 naction = traj[-1] # 取最终解
                 naction = to_numpy(get_action(naction))
-                
-                # 发布第一个样本的指定 waypoint
-                chosen_waypoint = naction[0][args.waypoint]
+
+                ##使用VLM评估分数
+                projected_traj = Trajprojector.project_points(naction)  #shape=(B，T，2)的uv坐标
+                # 从堆叠的 context tensor 中取最后一帧，并转为 (H, W, 3) uint8
+                last_obs = obs_images[0, -3:, :, :].detach().cpu()
+                mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+                std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+                last_obs = last_obs * std + mean
+                last_obs = torch.clamp(last_obs, 0.0, 1.0)
+                obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8)
+
+                scores, _ = Scorer.score_trajectories(obs_img_np, projected_traj)  # scores shape=(B,)
+                best_idx = int(np.argmax(scores))
+
+                # 选择分数最高的轨迹对应的 waypoint 作为输出
+                chosen_waypoint = naction[best_idx][args.waypoint]
 
             print(f"[NAV] 最近节点: {closest_node} | 距离: {dists[min_idx]:.2f} | 目标: {goal_node}")
 

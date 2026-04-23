@@ -11,7 +11,8 @@ from dotenv import load_dotenv
 
 from reward.prompt import TRAJECTORY_SCORE_PROMPT
 from constant import TRAJ_COLORS
-# Load .env from reward/ directory
+# Load env from reward/ directory (supports both `env` and `.env` filenames)
+load_dotenv(Path(__file__).parent / "env")
 load_dotenv(Path(__file__).parent / ".env")
 
 
@@ -127,6 +128,12 @@ class VLMTrajectoryScorer:
             dict with "scores" (list of floats) and "raw_output" (str).
         """
         annotated = self.render_trajectories(obs_image, trajectories)   #做好标签的图像
+        
+        #test
+        plt.imshow(annotated)
+        plt.show()
+        #test
+        
         image_b64 = self._image_to_base64(annotated)    #转换成VLM需要的base64格式
         input_messages = self._build_input(image_b64, task_description) #构建输入消息，包含图像和文本提示
 

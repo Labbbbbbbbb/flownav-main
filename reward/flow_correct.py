@@ -17,7 +17,7 @@ class TrajectoryProjector:
     base_dir = os.path.dirname(__file__)
     default_action_config = os.path.join(base_dir, "../flownav/data/data_config.yaml")
     default_camera_config = os.path.join(
-        base_dir, "../thirdparty/visualnav-transformer/train/vint_train/data/data_config.yaml"
+        base_dir, "../deployment/config/camera.yaml"
     )
 
     def __init__(self, dataset_name="recon", image_size=(640, 480),
