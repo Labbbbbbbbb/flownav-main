@@ -1,0 +1,4 @@
+# VLM Reward Model (Doubao)
+ARK_API_KEY=30260739-f11a-4e92-aa92-3e03dd8af2cb
+ARK_MODEL=doubao-seed-2-0-pro-260215
+ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
