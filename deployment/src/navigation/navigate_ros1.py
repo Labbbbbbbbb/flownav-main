@@ -156,7 +156,10 @@ def main(args):
                 t = torch.ones(noisy_action.shape[0], device=device)
                 h = torch.ones(noisy_action.shape[0], device=device)
                 u = model.noise_pred_net(
-                    sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond
+                    sample=noisy_action, 
+                    timestep=t, 
+                    stoptime=h, 
+                    global_cond=obs_cond
                 )
                 traj=noisy_action - u       #单步生成 只有一个时间步  不用再取traj[-1]
 
