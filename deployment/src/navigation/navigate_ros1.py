@@ -142,16 +142,25 @@ def main(args):
                 # --- MeanFlow / FlowNav 核心：ODE 推理 ---
                 noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
                 
-                # 使用 Euler 方法求解 ODE (Flow Matching)
-                traj = torchdiffeq.odeint(
-                    lambda t, x: model.forward("noise_pred_net", sample=x, timestep=t, global_cond=obs_cond),
-                    noisy_action,
-                    torch.linspace(0, 1, args.k_steps, device=device),
-                    atol=1e-4, rtol=1e-4, method="euler",
-                )
+                # # 使用 Euler 方法求解 ODE (Flow Matching)
+                # traj = torchdiffeq.odeint(
+                #     lambda t, x: model.forward("noise_pred_net", sample=x, timestep=t, global_cond=obs_cond),
+                #     noisy_action,
+                #     torch.linspace(0, 1, args.k_steps, device=device),
+                #     atol=1e-4, rtol=1e-4, method="euler",
+                # )
                 #traj:[num_steps, num_samples, len_traj_pred, 2]
-                naction = traj[-1] # 取最终解
-                naction = to_numpy(get_action(naction))
+
+                # Navigation — one-step MeanFlow
+                
+                t = torch.ones(noisy_action.shape[0], device=device)
+                h = torch.ones(noisy_action.shape[0], device=device)
+                u = model.noise_pred_net(
+                    sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond
+                )
+                traj=noisy_action - u       #单步生成 只有一个时间步  不用再取traj[-1]
+
+                naction = to_numpy(get_action(traj))
                 
                 # 发布第一个样本的指定 waypoint
                 chosen_waypoint = naction[0][args.waypoint]  #直接取第一个样本，可以加入api进行选择
