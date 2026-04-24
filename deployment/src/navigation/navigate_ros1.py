@@ -14,7 +14,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # ROS 1 适配
 import rospy
 from sensor_msgs.msg import Image
-from std_msgs.msg import Bool, Float32MultiArray
+from std_msgs.msg import Bool, Float32MultiArray,MultiArrayDimension
 
 # FlowNav / MeanFlow 核心组件
 import torchdiffeq
@@ -37,11 +37,14 @@ RATE = robot_config["frame_rate"]
 IMAGE_TOPIC = "/camera/color/image_raw" 
 WAYPOINT_TOPIC = "/waypoint"
 REACHED_GOAL_TOPIC = "/topoplan/reached_goal"
+TRAJS_TOPIC = "/candidate_trajs"
 
 # 全局变量
 context_queue = []
 obs_img = None
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 
 def callback_obs(msg):
     """处理来自 Realsense 的 ROS 1 图像消息"""
@@ -57,7 +60,7 @@ def callback_obs(msg):
             context_queue.append(obs_img)
 
 def main(args):
-    global context_size, obs_img
+    global context_size, obs_img, trajs_msg
     
     # 1. 加载模型配置
     with open(MODEL_CONFIG_PATH, "r") as f:
@@ -68,6 +71,21 @@ def main(args):
         model_params = yaml.safe_load(f)
 
     context_size = model_params["context_size"]
+    
+    
+    # 初始化轨迹消息格式
+    trajs_msg = Float32MultiArray()
+
+    ns = int(args.num_samples)
+    lt = int(model_params["len_traj_pred"])
+    cd = 2  # x,y
+
+    trajs_msg.layout.dim = [
+        MultiArrayDimension(label="num_samples", size=ns, stride=lt * cd),
+        MultiArrayDimension(label="len_traj_pred", size=lt, stride=cd),
+        MultiArrayDimension(label="coord", size=cd, stride=1),
+    ]
+    trajs_msg.layout.data_offset = 0
 
     # 2. 加载模型权重
     ckpt_path = args.ckpt
@@ -92,6 +110,7 @@ def main(args):
     rospy.Subscriber(IMAGE_TOPIC, Image, callback_obs, queue_size=1)
     waypoint_pub = rospy.Publisher(WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
     goal_pub = rospy.Publisher(REACHED_GOAL_TOPIC, Bool, queue_size=1)
+    trajs_pub = rospy.Publisher(TRAJS_TOPIC, Float32MultiArray, queue_size=1)
     
     ros_rate = rospy.Rate(RATE)
     print(f"[*] ROS 1 节点就绪。等待图像话题: {IMAGE_TOPIC}")
@@ -175,6 +194,12 @@ def main(args):
         waypoint_msg.data = chosen_waypoint.tolist()
         waypoint_pub.publish(waypoint_msg)
 
+        # 发布候选轨迹
+        
+        trajs_msg.data = naction.astype(np.float32).reshape(-1).tolist()
+
+        trajs_pub.publish(trajs_msg)
+        
         # 检查是否到达终点
         reached_goal = closest_node == goal_node
         goal_pub.publish(reached_goal)
