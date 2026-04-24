@@ -18,6 +18,7 @@ from sensor_msgs.msg import Image
 from flownav.models.nomad import NoMaD, DenseNetwork
 from flownav.models.nomad_vint import NoMaD_ViNT, replace_bn_with_gn
 from diffusion_policy.model.diffusion.conditional_unet1d import ConditionalUnet1D
+from meanflownav.models.meanflow_unet1d import MeanFlowConditionalUnet1D
 from flownav.data.data_utils import IMAGE_ASPECT_RATIO
 
 def load_model(
@@ -38,8 +39,8 @@ def load_model(
     )
     vision_encoder = replace_bn_with_gn(vision_encoder)
     
-    # 2. 实例化动作预测网络 (U-Net)
-    noise_pred_net = ConditionalUnet1D(
+    # 2. 实例化动作预测网络 (Meanflownav-Net)
+    noise_pred_net = MeanFlowConditionalUnet1D(
         input_dim=2,
         global_cond_dim=config["encoding_size"],
         down_dims=config["down_dims"],
