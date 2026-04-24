@@ -360,6 +360,7 @@ def visualize_action_distribution(
         # print(f"[DEBUG] obs_image after conversion: dtype={obs_image.dtype}, min={obs_image.min()}, max={obs_image.max()}")
         
         projected_traj = projected_traj * np.array([160.0/640.0, 120.0/480.0])
+        projected_traj[..., 0] = 160.0 - projected_traj[..., 0]
 
         score_result = Scorer.score(obs_image, projected_traj)
         scores = score_result["scores"]  # scores shape=(num_samples,)
