@@ -47,9 +47,13 @@ class VLMTrajectoryScorer:
         Returns:
             PIL Image with trajectories drawn on it.
         """
+        print(f"[DEBUG render] Input trajectories type: {type(trajectories)}, length: {len(trajectories) if isinstance(trajectories, (list, tuple, np.ndarray)) else 'N/A'}")
+        if isinstance(trajectories, np.ndarray):
+            print(f"[DEBUG render] trajectories is ndarray with shape: {trajectories.shape}")
         if isinstance(obs_image, np.ndarray):
             obs_image = Image.fromarray(obs_image)
         img = obs_image.copy().convert("RGB")
+        print(f"[DEBUG render] img size: {img.size}")
 
         from PIL import ImageDraw, ImageFont
 
@@ -63,14 +67,15 @@ class VLMTrajectoryScorer:
         for idx, traj in enumerate(trajectories):
             color = TRAJ_COLORS[idx % len(TRAJ_COLORS)]
             points = [(float(x), float(y)) for x, y in traj]
+            print(f"[DEBUG render] Trajectory {idx}: {len(points)} points, color={color}")
 
             # Draw trajectory line
             if len(points) >= 2:
-                draw.line(points, fill=color, width=3)
+                draw.line(points, fill=color, width=1)
 
             # Draw waypoint dots
             for pt in points:
-                r = 3
+                r = 1
                 draw.ellipse([pt[0] - r, pt[1] - r, pt[0] + r, pt[1] + r], fill=color)
 
             # Draw trajectory number label at the endpoint
@@ -78,7 +83,7 @@ class VLMTrajectoryScorer:
                 end = points[-1]
                 label = str(idx + 1)
                 draw.text(
-                    (end[0] + 5, end[1] - 7),
+                    (end[0] + 5, end[1] - 20),
                     label,
                     fill=color,
                     font=font,
@@ -128,11 +133,22 @@ class VLMTrajectoryScorer:
             dict with "scores" (list of floats) and "raw_output" (str).
         """
         annotated = self.render_trajectories(obs_image, trajectories)   #做好标签的图像
+        print(f"[DEBUG score] annotated type: {type(annotated)}, size: {annotated.size if hasattr(annotated, 'size') else 'N/A'}")
         
-        #test
-        plt.imshow(annotated)
-        plt.show()
-        #test
+        # Convert to numpy for inspection
+        annotated_np = np.array(annotated)
+        print(f"[DEBUG score] annotated_np shape: {annotated_np.shape}, dtype: {annotated_np.dtype}, min={annotated_np.min()}, max={annotated_np.max()}")
+        
+        # 临时保存标注图像来验证
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            annotated.save(tmp.name)
+            print(f"[DEBUG score] Saved annotated image to: {tmp.name}")
+        
+        # #test
+        # plt.imshow(annotated)
+        # plt.show()
+        # #test
         
         image_b64 = self._image_to_base64(annotated)    #转换成VLM需要的base64格式
         input_messages = self._build_input(image_b64, task_description) #构建输入消息，包含图像和文本提示
@@ -153,6 +169,7 @@ class VLMTrajectoryScorer:
         return {
             "scores": scores,
             "raw_output": raw_output,
+            "annotated_image": annotated_np,
         }
 
     def _parse_scores(self, text, num_trajs):
