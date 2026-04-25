@@ -137,6 +137,7 @@ def main(args):
     
     ros_rate = rospy.Rate(RATE)
     print(f"[*] ROS 1 节点就绪。等待图像话题: {IMAGE_TOPIC}")
+    annotated_image_msg = None
 
     # 6. 主循环
     while not rospy.is_shutdown():
@@ -259,7 +260,8 @@ def main(args):
         
 
         
-        overlay_pub.publish(annotated_image_msg) # 发布带注释的图像到 ROS 话题
+        if annotated_image_msg is not None:
+            overlay_pub.publish(annotated_image_msg) # 发布带注释的图像到 ROS 话题
         
         # 检查是否到达终点
         reached_goal = closest_node == goal_node
