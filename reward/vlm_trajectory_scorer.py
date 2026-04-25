@@ -169,7 +169,7 @@ class VLMTrajectoryScorer:
         return {
             "scores": scores,
             "raw_output": raw_output,
-            "annotated_image": annotated_np,
+            "annotated_image": annotated,
         }
 
     def _parse_scores(self, text, num_trajs):

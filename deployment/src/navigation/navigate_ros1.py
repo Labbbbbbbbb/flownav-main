@@ -6,7 +6,7 @@ import yaml
 import argparse
 import time
 import pickle
-from PIL import Image as PILImage
+from PIL import Image as PILImage,ImageDraw, ImageFont
 from pathlib import Path
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -42,6 +42,7 @@ RATE = robot_config["frame_rate"]
 IMAGE_TOPIC = "/camera/color/image_raw" 
 WAYPOINT_TOPIC = "/waypoint"
 REACHED_GOAL_TOPIC = "/topoplan/reached_goal"
+OVERLAY_TOPIC = "/overlay_image"            #pub
 
 # 全局变量
 context_queue = []
@@ -61,6 +62,18 @@ def callback_obs(msg):
             context_queue.pop(0)
             context_queue.append(obs_img)
 
+@staticmethod
+def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
+    msg = Image()
+    msg.header.stamp = stamp if stamp is not None else rospy.Time.now()
+    msg.header.frame_id = frame_id
+    msg.height, msg.width = rgb.shape[:2]
+    msg.encoding = "rgb8"
+    msg.is_bigendian = 0
+    msg.step = msg.width * 3
+    msg.data = rgb.tobytes()
+    return msg
+
 def main(args):
     global context_size, obs_img
     
@@ -76,7 +89,7 @@ def main(args):
 
     # 2. 加载模型权重
     ckpt_path = args.ckpt
-    print(f"[*] 正在从 {ckpt_path} 加载 MeanFlow 模型...")
+    print(f"[*] 正在从 {ckpt_path} 加载 FlowNav 模型...")
     model = load_model(ckpt_path, model_params, device)
     model = model.to(device)
     model.eval()
@@ -101,6 +114,7 @@ def main(args):
     rospy.Subscriber(IMAGE_TOPIC, Image, callback_obs, queue_size=1)
     waypoint_pub = rospy.Publisher(WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
     goal_pub = rospy.Publisher(REACHED_GOAL_TOPIC, Bool, queue_size=1)
+    overlay_pub = rospy.Publisher(OVERLAY_TOPIC, Image, queue_size=1)
     
     ros_rate = rospy.Rate(RATE)
     print(f"[*] ROS 1 节点就绪。等待图像话题: {IMAGE_TOPIC}")
@@ -177,10 +191,21 @@ def main(args):
                 annotated_image = score_result["annotated_image"]  # scores shape=(B,)
                 best_idx = int(np.argmax(scores))
 
+                draw=ImageDraw.Draw(annotated_image)
+                font = ImageFont.load_default()
+                draw.text(
+                    (5, 5),
+                    str(best_idx),
+                    fill=["magenta"],
+                    font=font,
+                )
+                annotated_np = np.array(annotated_image)
+                annotated_image_msg = msg_from_numpy(annotated_np)  # 转换为 ROS 消息格式
+                
                 import tempfile
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=visualize_path) as tmp:
                     from PIL import Image as PILImage
-                    PILImage.fromarray(annotated_image).save(tmp.name)
+                    annotated_image.save(tmp.name)
                     print(f"[DEBUG] Saved annotated_image to: {tmp.name}") 
 
                 # 选择分数最高的轨迹对应的 waypoint 作为输出
@@ -221,6 +246,9 @@ def main(args):
         waypoint_msg.data = chosen_waypoint.tolist()
         waypoint_pub.publish(waypoint_msg)
 
+        overlay_pub.publish(annotated_image_msg) # 发布带注释的图像到 ROS 话题
+        
+        
         # 检查是否到达终点
         reached_goal = closest_node == goal_node
         goal_pub.publish(reached_goal)
