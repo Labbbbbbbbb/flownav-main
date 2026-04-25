@@ -6,7 +6,7 @@ import yaml
 import argparse
 import time
 import pickle
-from PIL import Image as PILImage
+from PIL import Image as PILImage,ImageDraw, ImageFont
 from pathlib import Path
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -20,6 +20,11 @@ from std_msgs.msg import Bool, Float32MultiArray,MultiArrayDimension
 import torchdiffeq
 from flownav.training.utils import get_action
 from utils import to_numpy, transform_images, load_model, msg_to_pil
+
+# Flow_Correct /VLM Scorer 组件
+from reward.flow_correct import TrajectoryProjector
+from reward.vlm_trajectory_scorer import VLMTrajectoryScorer
+
 
 # 配置路径（请根据你的实际情况检查这些路径）
 TOPOMAP_IMAGES_DIR = "../../topomaps/images"
@@ -37,7 +42,8 @@ RATE = robot_config["frame_rate"]
 IMAGE_TOPIC = "/camera/color/image_raw" 
 WAYPOINT_TOPIC = "/waypoint"
 REACHED_GOAL_TOPIC = "/topoplan/reached_goal"
-TRAJS_TOPIC = "/candidate_trajs"
+OVERLAY_TOPIC = "/overlay_image"            #pub
+# TRAJS_TOPIC = "/candidate_trajs"
 
 # 全局变量
 context_queue = []
@@ -58,6 +64,18 @@ def callback_obs(msg):
         else:
             context_queue.pop(0)
             context_queue.append(obs_img)
+            
+@staticmethod
+def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
+    msg = Image()
+    msg.header.stamp = stamp if stamp is not None else rospy.Time.now()
+    msg.header.frame_id = frame_id
+    msg.height, msg.width = rgb.shape[:2]
+    msg.encoding = "rgb8"
+    msg.is_bigendian = 0
+    msg.step = msg.width * 3
+    msg.data = rgb.tobytes()
+    return msg
 
 def main(args):
     global context_size, obs_img, trajs_msg
@@ -105,17 +123,22 @@ def main(args):
     closest_node = 0
     goal_node = len(topomap) - 1 if args.goal_node == -1 else args.goal_node
     
-    # 4. ROS 1 节点初始化
+    # 4. Scorer初始化
+    Trajprojector = TrajectoryProjector(dataset_name="deploy")
+    Scorer=VLMTrajectoryScorer()
+    
+    # 5. ROS 1 节点初始化
     rospy.init_node("MEANFLOW_NAVIGATION", anonymous=False)
     rospy.Subscriber(IMAGE_TOPIC, Image, callback_obs, queue_size=1)
     waypoint_pub = rospy.Publisher(WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
     goal_pub = rospy.Publisher(REACHED_GOAL_TOPIC, Bool, queue_size=1)
-    trajs_pub = rospy.Publisher(TRAJS_TOPIC, Float32MultiArray, queue_size=1)
+    # trajs_pub = rospy.Publisher(TRAJS_TOPIC, Float32MultiArray, queue_size=1)
+    overlay_pub = rospy.Publisher(OVERLAY_TOPIC, Image, queue_size=1)
     
     ros_rate = rospy.Rate(RATE)
     print(f"[*] ROS 1 节点就绪。等待图像话题: {IMAGE_TOPIC}")
 
-    # 5. 主循环
+    # 6. 主循环
     while not rospy.is_shutdown():
         chosen_waypoint = np.zeros(4)
 
@@ -184,8 +207,43 @@ def main(args):
 
                 naction = to_numpy(get_action(traj))
                 
+                
+                ##使用VLM评估分数
+                projected_traj = Trajprojector.project_points(naction)  #shape=(B，T，2)的uv坐标
+                # 从堆叠的 context tensor 中取最后一帧，并转为 (H, W, 3) uint8
+                last_obs = obs_images[0, -3:, :, :].detach().cpu()
+                mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+                std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+                last_obs = last_obs * std + mean
+                last_obs = torch.clamp(last_obs, 0.0, 1.0)
+                obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8) 
+
+                #(640,480)->(160,120)
+                projected_traj = projected_traj * np.array([160.0/640.0, 120.0/480.0])
+
+                score_result= Scorer.score(obs_img_np, projected_traj)
+                scores = score_result["scores"]  # scores shape=(num_samples,)
+                annotated_PIL = score_result["annotated_image"]  # annotated_image shape=(H, W, 3) uint8
+                best_idx = int(np.argmax(scores))
+                
+                
+                draw=ImageDraw.Draw(annotated_PIL)
+                font = ImageFont.load_default()
+                draw.text(
+                    (5, 5),
+                    str(best_idx),
+                    fill=["magenta"],
+                    font=font,
+                )
+                
+                annotated_np = np.array(annotated_PIL)
+                annotated_image_msg = msg_from_numpy(annotated_np)  # 转换为 ROS 消息格式
+
+                # 选择分数最高的轨迹对应的 waypoint 作为输出
+                chosen_waypoint = naction[best_idx][args.waypoint]
+                
                 # 发布第一个样本的指定 waypoint
-                chosen_waypoint = naction[0][args.waypoint]  #直接取第一个样本，可以加入api进行选择
+                #chosen_waypoint = naction[0][args.waypoint]  #直接取第一个样本，可以加入api进行选择
 
             print(f"[NAV] 最近节点: {closest_node} | 距离: {dists[min_idx]:.2f} | 目标: {goal_node}")
 
@@ -196,9 +254,12 @@ def main(args):
 
         # 发布候选轨迹
         
-        trajs_msg.data = naction.astype(np.float32).reshape(-1).tolist()
+        # trajs_msg.data = naction.astype(np.float32).reshape(-1).tolist()
+        # trajs_pub.publish(trajs_msg)
+        
 
-        trajs_pub.publish(trajs_msg)
+        
+        overlay_pub.publish(annotated_image_msg) # 发布带注释的图像到 ROS 话题
         
         # 检查是否到达终点
         reached_goal = closest_node == goal_node

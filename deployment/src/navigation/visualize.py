@@ -9,7 +9,7 @@ import torch
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 from navigate_ros1 import trajs_msg
-
+from reward.flow_correct import TrajectoryProjector
 
 # 复用项目里的转换函数（避免 cv_bridge 兼容问题）
 from utils import msg_to_pil
@@ -19,113 +19,7 @@ WAYPOINT_TOPIC = "/waypoint"                #sub
 TRAJS_TOPIC = "/candidate_trajs"            #sub
 OVERLAY_TOPIC = "/overlay_image"            #pub
 
-#从flow_correct.py复用过来的投影类，因为这个分支没有reward所以不能import
-class TrajectoryProjector:
-    """Handles action space conversions and camera projection.
 
-    Loads action stats and camera intrinsics once, then provides methods to
-    convert between normalized deltas, cumulative actions, and pixel coords.
-    """
-
-    base_dir = os.path.dirname(__file__)
-    default_action_config = os.path.join(base_dir, "../../../flownav/data/data_config.yaml")        #注意这里的路径跟flowcorrect中的不同
-    default_camera_config = os.path.join(
-        base_dir, "../../../deployment/config/camera.yaml"
-    )
-
-    def __init__(self, dataset_name="deploy", image_size=(640, 480),
-                 action_config_path=default_action_config,
-                 camera_config_path=default_camera_config,
-                 camera_params=None):
-        """
-        Args:
-            dataset_name: dataset key in camera config yaml.
-            image_size: (width, height) for pixel clipping.
-            action_config_path: path to action stats yaml.
-            camera_config_path: path to camera metrics yaml.
-            camera_params: dict to directly specify camera intrinsics, e.g.:
-                {
-                    "camera_height": 0.95,
-                    "camera_x_offset": 0.45,
-                    "fx": 272.5, "fy": 266.4, "cx": 320.0, "cy": 220.0,
-                    "k1": 0.0, "k2": 0.0, "p1": 0.0, "p2": 0.0, "k3": 0.0,
-                }
-                When provided, camera_config_path and dataset_name are ignored
-                for camera loading.
-        """
-        with open(action_config_path, "r") as f:
-            action_config = yaml.safe_load(f)
-        self.action_stats = {k: np.array(v) for k, v in action_config["action_stats"].items()}
-
-        if camera_params is not None:
-            self._init_camera_from_dict(camera_params)
-        else:
-            with open(camera_config_path, "r") as f:
-                camera_config = yaml.safe_load(f)
-            cam = camera_config[dataset_name]["camera_metrics"]
-            self._init_camera_from_yaml(cam)
-        self.image_size = image_size
-
-    def _init_camera_from_yaml(self, cam):
-        """Initialize from yaml camera_metrics nested dict."""
-        cm = cam["camera_matrix"]
-        dc = cam["dist_coeffs"]
-        self._init_camera_from_dict({
-            "camera_height": cam["camera_height"],
-            "camera_x_offset": cam.get("camera_x_offset", 0.0),
-            "fx": cm["fx"], "fy": cm["fy"], "cx": cm["cx"], "cy": cm["cy"],
-            "k1": dc["k1"], "k2": dc["k2"], "p1": dc["p1"], "p2": dc["p2"], "k3": dc["k3"],
-        })
-
-    def _init_camera_from_dict(self, p):
-        self.camera_height = p["camera_height"]
-        self.camera_x_offset = p.get("camera_x_offset", 0.0)
-        self.camera_matrix = np.array([
-            [p["fx"], 0.0, p["cx"]],
-            [0.0, p["fy"], p["cy"]],
-            [0.0, 0.0, 1.0],
-        ])
-        # 畸变矫正参数，k1,k2,k3为径向畸变，p1,p2为切向畸变
-        self.dist_coeffs = np.array([
-            p.get("k1", 0.0), p.get("k2", 0.0),
-            p.get("p1", 0.0), p.get("p2", 0.0),
-            p.get("k3", 0.0), 0.0, 0.0, 0.0,
-        ])
-
-    def ndeltas_to_actions(self, ndeltas):
-        """Normalized deltas (B, T, 2) tensor → cumulative actions (B, T, 2) tensor."""
-        ndeltas_np = ndeltas.detach().cpu().numpy().reshape(ndeltas.shape[0], -1, 2)
-        ndeltas_np = (ndeltas_np + 1) / 2 * (self.action_stats["max"] - self.action_stats["min"]) + self.action_stats["min"]
-        actions = np.cumsum(ndeltas_np, axis=1)
-        return torch.from_numpy(actions).float().to(ndeltas.device)
-
-    def project_points(self, xy):
-        """Local (x, y) waypoints (B, T, 2) np → pixel (u, v) (B, T, 2) np.
-
-        Reused from visualnav-transformer/train/vint_train/visualizing/action_utils.py.
-        """
-        batch_size, horizon, _ = xy.shape
-        xyz = np.concatenate(
-            [xy, -self.camera_height * np.ones(list(xy.shape[:-1]) + [1])], axis=-1
-        )
-        rvec = tvec = (0, 0, 0)
-        xyz[..., 0] += self.camera_x_offset
-        xyz_cv = np.stack([xyz[..., 1], -xyz[..., 2], xyz[..., 0]], axis=-1)
-        uv, _ = cv2.projectPoints(
-            xyz_cv.reshape(batch_size * horizon, 3).astype(np.float64),
-            rvec, tvec, self.camera_matrix, self.dist_coeffs,
-        )
-        uv = uv.reshape(batch_size, horizon, 2)
-        return uv
-
-    def actions_to_pixels(self, actions_np):
-        """Cumulative actions (B, T, 2) np → clipped pixel coords (B, T, 2) np."""
-        w, h = self.image_size
-        uv = self.project_points(actions_np)
-        uv[..., 0] = w - uv[..., 0]
-        uv[..., 0] = np.clip(uv[..., 0], 0, w)
-        uv[..., 1] = np.clip(uv[..., 1], 0, h)
-        return uv
 
 
 
