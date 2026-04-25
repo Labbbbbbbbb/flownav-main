@@ -115,7 +115,7 @@ def main(args):
     waypoint_pub = rospy.Publisher(WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
     goal_pub = rospy.Publisher(REACHED_GOAL_TOPIC, Bool, queue_size=1)
     overlay_pub = rospy.Publisher(OVERLAY_TOPIC, Image, queue_size=1)
-    
+    annotated_image_msg = None
     ros_rate = rospy.Rate(RATE)
     print(f"[*] ROS 1 节点就绪。等待图像话题: {IMAGE_TOPIC}")
 
@@ -245,7 +245,8 @@ def main(args):
         waypoint_msg.data = chosen_waypoint.tolist()
         waypoint_pub.publish(waypoint_msg)
 
-        overlay_pub.publish(annotated_image_msg) # 发布带注释的图像到 ROS 话题
+        if annotated_image_msg is not None:
+            overlay_pub.publish(annotated_image_msg) # 发布带注释的图像到 ROS 话题
         
         
         # 检查是否到达终点
