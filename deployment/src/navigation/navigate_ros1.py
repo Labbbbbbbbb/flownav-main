@@ -204,7 +204,6 @@ def main(args):
                 
                 import tempfile
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=visualize_path) as tmp:
-                    from PIL import Image as PILImage
                     annotated_image.save(tmp.name)
                     print(f"[DEBUG] Saved annotated_image to: {tmp.name}") 
 
