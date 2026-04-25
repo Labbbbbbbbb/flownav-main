@@ -10,7 +10,20 @@ from volcenginesdkarkruntime import Ark
 from dotenv import load_dotenv
 
 from reward.prompt import TRAJECTORY_SCORE_PROMPT
-from constant import TRAJ_COLORS
+try:
+    from constant import TRAJ_COLORS
+except ModuleNotFoundError:
+    # Fallback palette when project-level constants module is unavailable.
+    TRAJ_COLORS = [
+        "red",
+        "green",
+        "blue",
+        "yellow",
+        "magenta",
+        "cyan",
+        "orange",
+        "white",
+    ]
 # Load env from reward/ directory (supports both `env` and `.env` filenames)
 load_dotenv(Path(__file__).parent / "env")
 load_dotenv(Path(__file__).parent / ".env")
