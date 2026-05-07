@@ -220,7 +220,7 @@ def main(args):
                 obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8) 
 
                 #(640,480)->(160,120)
-                projected_traj = projected_traj * np.array([160.0/640.0, 120.0/480.0])
+                projected_traj = projected_traj * np.array([96.0/640.0, 96.0/480.0])
 
                 score_result= Scorer.score(obs_img_np, projected_traj)
                 scores = score_result["scores"]  # scores shape=(num_samples,)

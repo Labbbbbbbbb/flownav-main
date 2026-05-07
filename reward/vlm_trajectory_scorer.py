@@ -92,15 +92,15 @@ class VLMTrajectoryScorer:
                 draw.ellipse([pt[0] - r, pt[1] - r, pt[0] + r, pt[1] + r], fill=color)
 
             # Draw trajectory number label at the endpoint
-            if len(points) > 0:
-                end = points[-1]
-                label = str(idx + 1)
-                draw.text(
-                    (end[0] + 5, end[1] - 20),
-                    label,
-                    fill=color,
-                    font=font,
-                )
+            # if len(points) > 0:
+            #     end = points[-1]
+            #     label = str(idx + 1)
+            #     draw.text(
+            #         (end[0] + 5, end[1] - 20),
+            #         label,
+            #         fill=color,
+            #         font=font,
+            #     )
 
         return img
 

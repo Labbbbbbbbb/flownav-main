@@ -570,14 +570,14 @@ def visualize_action_distribution(
         scores = score_result["scores"]  # scores shape=(num_samples,)
         annotated_image = score_result["annotated_image"]
         # print(f"[DEBUG] annotated_image shape: {annotated_image.shape}, dtype: {annotated_image.dtype}, min={annotated_image.min()}, max={annotated_image.max()}")
-        best_idx = int(np.argmax(scores))
-        
+        # best_idx = int(np.argmax(scores))
+        annotated_np = np.array(annotated_image)
         # 临时保存来验证
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=visualize_path) as tmp:
-            from PIL import Image as PILImage
-            PILImage.fromarray(annotated_image).save(tmp.name)
-            print(f"[DEBUG] Saved annotated_image to: {tmp.name}")    
+        # import tempfile
+        # with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=visualize_path) as tmp:
+        #     from PIL import Image as PILImage
+        #     PILImage.fromarray(annotated_image).save(tmp.name)
+        #     print(f"[DEBUG] Saved annotated_image to: {tmp.name}")    
 
 
 
@@ -647,11 +647,13 @@ def visualize_action_distribution(
         #     )
         ax[0].legend(bbox_to_anchor=(0.0, -0.5), loc="upper left", ncol=2)
         # 将观测和目标图像从 (C, H, W) 转为 (H, W, C)，imshow 需要 channel-last 格式
-        obs_image = to_numpy(batch_viz_obs_images[i])
+        #obs_image = to_numpy(batch_viz_obs_images[i])
         goal_image = to_numpy(batch_viz_goal_images[i])
-        obs_image = np.moveaxis(obs_image, 0, -1)   # (C,H,W) → (H,W,C)
+        #obs_image = np.moveaxis(obs_image, 0, -1)   # (C,H,W) → (H,W,C)
         goal_image = np.moveaxis(goal_image, 0, -1) # (C,H,W) → (H,W,C)
-        ax[2].imshow(obs_image)   # 第三列：当前观测帧
+        # ax[2].imshow(obs_image)   # 第三列：当前观测帧
+        ax[2].imshow(annotated_np)   # 第三列：当前观测帧
+        
         ax[3].imshow(goal_image)  # 第四列：目标图像
         ax[0].set_title("gaussian->final stages")
         ax[1].set_title("action predictions")
