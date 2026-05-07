@@ -86,13 +86,13 @@ meanflow:
 image_size: [96, 96]
 datasets:
   go_stanford:
-    data_folder: /data/home/mobilemani/downloads/data/go_stanford/go_stanford
-    train: /data/home/libo/project/flownav/data_splits/go_stanford/train/
-    test: /data/home/libo/project/flownav/data_splits/go_stanford/test/
-    end_slack: 0
+    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/custom_4_29
+    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29/train/
+    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29/test/
+    end_slack: 3
     goals_per_obs: 2
     negative_mining: True
-    waypoint_spacing: 1
+    waypoint_spacing: 3
 
 # logging
 print_log_freq: 500
