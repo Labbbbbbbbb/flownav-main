@@ -228,23 +228,23 @@ def main(args):
                 best_idx = int(np.argmax(scores))
                 
                 
-                draw=ImageDraw.Draw(annotated_PIL)
-                font = ImageFont.load_default()
-                draw.text(
-                    (5, 5),
-                    str(best_idx),
-                    fill=["magenta"],
-                    font=font,
-                )
+                # draw=ImageDraw.Draw(annotated_PIL)
+                # font = ImageFont.load_default()
+                # draw.text(
+                #     (5, 5),
+                #     str(best_idx),
+                #     fill="magenta",
+                #     font=font,
+                # )
                 
                 annotated_np = np.array(annotated_PIL)
                 annotated_image_msg = msg_from_numpy(annotated_np)  # 转换为 ROS 消息格式
 
                 # 选择分数最高的轨迹对应的 waypoint 作为输出
-                chosen_waypoint = naction[best_idx][args.waypoint]
+                # chosen_waypoint = naction[best_idx][args.waypoint]
                 
                 # 发布第一个样本的指定 waypoint
-                #chosen_waypoint = naction[0][args.waypoint]  #直接取第一个样本，可以加入api进行选择
+                chosen_waypoint = naction[0][args.waypoint]  #直接取第一个样本，可以加入api进行选择
 
             print(f"[NAV] 最近节点: {closest_node} | 距离: {dists[min_idx]:.2f} | 目标: {goal_node}")
 

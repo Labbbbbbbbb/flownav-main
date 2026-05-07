@@ -146,39 +146,40 @@ class VLMTrajectoryScorer:
             dict with "scores" (list of floats) and "raw_output" (str).
         """
         annotated = self.render_trajectories(obs_image, trajectories)   #做好标签的图像
-        print(f"[DEBUG score] annotated type: {type(annotated)}, size: {annotated.size if hasattr(annotated, 'size') else 'N/A'}")
+        # print(f"[DEBUG score] annotated type: {type(annotated)}, size: {annotated.size if hasattr(annotated, 'size') else 'N/A'}")
         
         # Convert to numpy for inspection
-        annotated_np = np.array(annotated)
-        print(f"[DEBUG score] annotated_np shape: {annotated_np.shape}, dtype: {annotated_np.dtype}, min={annotated_np.min()}, max={annotated_np.max()}")
+        # annotated_np = np.array(annotated)
+        # print(f"[DEBUG score] annotated_np shape: {annotated_np.shape}, dtype: {annotated_np.dtype}, min={annotated_np.min()}, max={annotated_np.max()}")
         
         # 临时保存标注图像来验证
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            annotated.save(tmp.name)
-            print(f"[DEBUG score] Saved annotated image to: {tmp.name}")
+        # import tempfile
+        # with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        #     annotated.save(tmp.name)
+        #     print(f"[DEBUG score] Saved annotated image to: {tmp.name}")
         
         # #test
         # plt.imshow(annotated)
         # plt.show()
         # #test
         
-        image_b64 = self._image_to_base64(annotated)    #转换成VLM需要的base64格式
-        input_messages = self._build_input(image_b64, task_description) #构建输入消息，包含图像和文本提示
+        # image_b64 = self._image_to_base64(annotated)    #转换成VLM需要的base64格式
+        # input_messages = self._build_input(image_b64, task_description) #构建输入消息，包含图像和文本提示
 
-        response = self.client.responses.create(
-            model=self.model,
-            input=input_messages,
-        )
-        # Extract text from the response output messages
-        raw_output = ""
-        for item in response.output:
-            if hasattr(item, "content"):
-                for block in item.content:
-                    if hasattr(block, "text"):
-                        raw_output += block.text
-
-        scores = self._parse_scores(raw_output, len(trajectories))
+        # response = self.client.responses.create(
+        #     model=self.model,
+        #     input=input_messages,
+        # )
+        # # Extract text from the response output messages
+        # raw_output = ""
+        # for item in response.output:
+        #     if hasattr(item, "content"):
+        #         for block in item.content:
+        #             if hasattr(block, "text"):
+        #                 raw_output += block.text
+        scores=None
+        raw_output=None
+        # scores = self._parse_scores(raw_output, len(trajectories))
         return {
             "scores": scores,
             "raw_output": raw_output,
