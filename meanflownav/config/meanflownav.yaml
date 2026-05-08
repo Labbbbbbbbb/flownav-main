@@ -131,4 +131,4 @@ eval_freq: 1
 # load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_04_15_20_23_25/latest.pth   #在上面的基础上又在custom上训练了一轮
 # load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_04_30_00_32_36/latest.pth #在上面的基础上又在custom_4_29上训练了一轮
 # load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_07_23_47_24/latest.pth #在上面的基础上又在custom_4_29_lab上训练了一轮
-load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_08_15_15_31/latest.pth
+load_run: /home/zyt/flownav-main/weights/0430_lab.pth
