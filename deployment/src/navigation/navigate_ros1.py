@@ -56,6 +56,15 @@ obs_img = None
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> np.ndarray:
+    """Convert a normalized CHW tensor back to an RGB uint8 image for visualization."""
+    mean = torch.tensor([0.485, 0.456, 0.406], device=image_tensor.device).view(3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225], device=image_tensor.device).view(3, 1, 1)
+    image_tensor = image_tensor[:3] * std + mean
+    image_tensor = torch.clamp(image_tensor, 0.0, 1.0)
+    return (image_tensor.permute(1, 2, 0).detach().cpu().numpy() * 255.0).astype(np.uint8)
+
+
 
 def callback_obs(msg):
     """处理来自 Realsense 的 ROS 1 图像消息"""
@@ -229,6 +238,7 @@ def main(args):
 
                 #(640,480)->(96,96)
                 projected_traj = projected_traj * np.array([96.0/640.0, 96.0/480.0])
+                projected_traj[..., 0] = 96.0 - projected_traj[..., 0]
 
                 score_result= Scorer.score(obs_img_np, projected_traj)
                 scores = score_result["scores"]  # scores shape=(num_samples,)
@@ -250,9 +260,13 @@ def main(args):
 
 
                 # 在主循环内，在 annotated_image_msg = msg_from_numpy(annotated_np) 之后加：
+                goal_img_np = tensor_to_rgb_uint8(goal_images[sg_idx])
+                if annotated_np.shape[0] != goal_img_np.shape[0]:
+                    goal_img_np = cv2.resize(goal_img_np, (goal_img_np.shape[1], annotated_np.shape[0]))
+
                 vis_img = np.hstack([
                     annotated_np,
-                    (goal_images[sg_idx, :3].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                    goal_img_np,
                 ])
                 cv2.imshow('Observation (left) vs Goal (right)', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
                 cv2.waitKey(1)
@@ -291,7 +305,7 @@ def main(args):
             print("[!] 到达终点！")
 
         ros_rate.sleep()
-    
+
     # visualizer.close()
 
 if __name__ == "__main__":
@@ -301,7 +315,7 @@ if __name__ == "__main__":
     parser.add_argument("--dir", "-d", required=True, type=str, help="拓扑图目录名")
     parser.add_argument("--waypoint", "-w", default=2, type=int)
     parser.add_argument("--k_steps", "-k", default=10, type=int, help="ODE 求解步数")
-    parser.add_argument("--radius", "-r", default=4, type=int)
+    parser.add_argument("--radius", "-r", default=4, type=int) #原来是4
     parser.add_argument("--close_threshold", "-t", default=3, type=int)
     parser.add_argument("--goal-node", "-g", default=-1, type=int)
     parser.add_argument("--num-samples", "-n", default=8, type=int)

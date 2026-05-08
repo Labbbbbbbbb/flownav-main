@@ -17,7 +17,8 @@ python pd_controller.py
 cd ~/catkin_ws
 source devel/setup.bash
 roslaunch realsense2_camera rs_camera.launch
-
+#roslaunch realsense2_camera rs_camera.launch color_width:=640 color_height:=480 color_fps:=15
+#
 #terminal4
 cd ~/catkin_ws
 source devel/setup.bash
