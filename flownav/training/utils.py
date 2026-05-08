@@ -266,9 +266,6 @@ def visualize_action_distribution(
     print('ema_model.training:',ema_model.training)
 
 
-
-
-
     visualize_path = os.path.join(
         project_folder,
         "visualize",

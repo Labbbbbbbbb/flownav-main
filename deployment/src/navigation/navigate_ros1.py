@@ -1,4 +1,6 @@
 import os
+import cv2
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -24,6 +26,9 @@ from utils import to_numpy, transform_images, load_model, msg_to_pil
 # Flow_Correct /VLM Scorer 组件
 from reward.flow_correct import TrajectoryProjector
 from reward.vlm_trajectory_scorer import VLMTrajectoryScorer
+
+# Visualization
+# from visualize_goals import GoalVisualizer
 
 
 # 配置路径（请根据你的实际情况检查这些路径）
@@ -127,7 +132,10 @@ def main(args):
     Trajprojector = TrajectoryProjector(dataset_name="deploy")
     Scorer=VLMTrajectoryScorer()
     
-    # 5. ROS 1 节点初始化
+    # 5. 可视化初始化
+    # visualizer = GoalVisualizer(display=True, save=False)
+    
+    # 6. ROS 1 节点初始化
     rospy.init_node("MEANFLOW_NAVIGATION", anonymous=False)
     rospy.Subscriber(IMAGE_TOPIC, Image, callback_obs, queue_size=1)
     waypoint_pub = rospy.Publisher(WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
@@ -139,7 +147,7 @@ def main(args):
     print(f"[*] ROS 1 节点就绪。等待图像话题: {IMAGE_TOPIC}")
     annotated_image_msg = None
 
-    # 6. 主循环
+    # 7. 主循环
     while not rospy.is_shutdown():
         chosen_waypoint = np.zeros(4)
 
@@ -219,7 +227,7 @@ def main(args):
                 last_obs = torch.clamp(last_obs, 0.0, 1.0)
                 obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8) 
 
-                #(640,480)->(160,120)
+                #(640,480)->(96,96)
                 projected_traj = projected_traj * np.array([96.0/640.0, 96.0/480.0])
 
                 score_result= Scorer.score(obs_img_np, projected_traj)
@@ -240,6 +248,18 @@ def main(args):
                 annotated_np = np.array(annotated_PIL)
                 annotated_image_msg = msg_from_numpy(annotated_np)  # 转换为 ROS 消息格式
 
+
+                # 在主循环内，在 annotated_image_msg = msg_from_numpy(annotated_np) 之后加：
+                vis_img = np.hstack([
+                    annotated_np,
+                    (goal_images[sg_idx, :3].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                ])
+                cv2.imshow('Observation (left) vs Goal (right)', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
+                cv2.waitKey(1)
+                
+                # 实时可视化：观测图 + 目标图
+                # visualizer.update(annotated_np, goal_images[sg_idx])
+
                 # 选择分数最高的轨迹对应的 waypoint 作为输出
                 # chosen_waypoint = naction[best_idx][args.waypoint]
                 
@@ -249,6 +269,7 @@ def main(args):
             print(f"[NAV] 最近节点: {closest_node} | 距离: {dists[min_idx]:.2f} | 目标: {goal_node}")
 
         # 发布 Waypoint 给 pd_controller
+        
         waypoint_msg = Float32MultiArray()
         waypoint_msg.data = chosen_waypoint.tolist()
         waypoint_pub.publish(waypoint_msg)
@@ -270,6 +291,8 @@ def main(args):
             print("[!] 到达终点！")
 
         ros_rate.sleep()
+    
+    # visualizer.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -285,3 +308,12 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     main(args)
+
+    # try:
+    #     main(args)
+    # except KeyboardInterrupt:
+    #     print("[!] 中断输入，退出...")
+    # except Exception as e:
+    #     print(f"[!] 错误: {e}")
+    #     import traceback
+    #     traceback.print_exc()
