@@ -93,10 +93,10 @@ datasets:
   #   negative_mining: True
   #   waypoint_spacing: 1
 
-  custom_4_29:
-    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/custom_4_29
-    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29/train/
-    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29/test/
+  custom:
+    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/custom_4_29_lab
+    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29_lab/train/
+    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29_lab/test/
     end_slack: 3
     goals_per_obs: 2
     negative_mining: True
