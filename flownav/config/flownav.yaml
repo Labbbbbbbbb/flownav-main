@@ -100,7 +100,7 @@ datasets:
     end_slack: 3
     goals_per_obs: 2
     negative_mining: True
-    waypoint_spacing: 3
+    waypoint_spacing: 1
 #   cory_hall:
 #     data_folder: /home/<username>/nomad_dataset/cory_hall/
 #     train: /home/<username>/data_splits/cory_hall/train/
@@ -139,3 +139,4 @@ eval_freq: 1 # in epochs
 # load_run: /home/zyt/flownav-main/weights/flownav_weights.pth
 #load_run: /home/zyt/flownav-main/logs/flownav/flownav_2026_04_11_13_17_02/4.pth
 load_run: /media/zhanyt/Data/Zytisworking/flownav-main/weights/flownav_weights.pth
+#/media/zhanyt/Data/Zytisworking/flownav-main/logs/flownav/flownav_2026_05_11_12_09_22/latest.pth

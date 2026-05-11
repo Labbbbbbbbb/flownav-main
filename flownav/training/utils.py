@@ -348,32 +348,27 @@ def visualize_action_distribution(
             axis=0,
         )
 
-        ##使用VLM评估分数
-        projected_traj = Trajprojector.project_points(gc_actions)  #shape=(num_samples，T，2)的uv坐标
-        # print(f"[DEBUG] projected_traj shape: {projected_traj.shape}, min={projected_traj.min()}, max={projected_traj.max()}")
-        # 将 CHW tensor 转为 (H, W, 3)
-        obs_image = batch_viz_obs_images[i].detach().cpu().permute(1, 2, 0).numpy()
-        # print(f"[DEBUG] obs_image shape: {obs_image.shape}, dtype: {obs_image.dtype}, min={obs_image.min()}, max={obs_image.max()}")
-        if obs_image.dtype != np.uint8:
-            scale = 255.0 if np.issubdtype(obs_image.dtype, np.floating) and obs_image.max() <= 1.0 else 1.0
-            obs_image = np.clip(obs_image * scale, 0, 255).astype(np.uint8)
-        # print(f"[DEBUG] obs_image after conversion: dtype={obs_image.dtype}, min={obs_image.min()}, max={obs_image.max()}")
+        # ##使用VLM评估分数
+        # projected_traj = Trajprojector.project_points(gc_actions)  #shape=(num_samples，T，2)的uv坐标
+        # # print(f"[DEBUG] projected_traj shape: {projected_traj.shape}, min={projected_traj.min()}, max={projected_traj.max()}")
+        # # 将 CHW tensor 转为 (H, W, 3)
+        # obs_image = batch_viz_obs_images[i].detach().cpu().permute(1, 2, 0).numpy()
+        # # print(f"[DEBUG] obs_image shape: {obs_image.shape}, dtype: {obs_image.dtype}, min={obs_image.min()}, max={obs_image.max()}")
+        # if obs_image.dtype != np.uint8:
+        #     scale = 255.0 if np.issubdtype(obs_image.dtype, np.floating) and obs_image.max() <= 1.0 else 1.0
+        #     obs_image = np.clip(obs_image * scale, 0, 255).astype(np.uint8)
+        # # print(f"[DEBUG] obs_image after conversion: dtype={obs_image.dtype}, min={obs_image.min()}, max={obs_image.max()}")
         
-        projected_traj = projected_traj * np.array([160.0/640.0, 120.0/480.0])
-        projected_traj[..., 0] = 160.0 - projected_traj[..., 0]
+        # projected_traj = projected_traj * np.array([160.0/640.0, 120.0/480.0])
+        # projected_traj[..., 0] = 160.0 - projected_traj[..., 0]
 
-        score_result = Scorer.score(obs_image, projected_traj)
-        scores = score_result["scores"]  # scores shape=(num_samples,)
-        annotated_image = score_result["annotated_image"]
-        # print(f"[DEBUG] annotated_image shape: {annotated_image.shape}, dtype: {annotated_image.dtype}, min={annotated_image.min()}, max={annotated_image.max()}")
-        best_idx = int(np.argmax(scores))
+        # score_result = Scorer.score(obs_image, projected_traj)
+        # scores = score_result["scores"]  # scores shape=(num_samples,)
+        # annotated_image = score_result["annotated_image"]
+        # # print(f"[DEBUG] annotated_image shape: {annotated_image.shape}, dtype: {annotated_image.dtype}, min={annotated_image.min()}, max={annotated_image.max()}")
+        # best_idx = int(np.argmax(scores))
         
-        # 临时保存来验证
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=visualize_path) as tmp:
-            from PIL import Image as PILImage
-            PILImage.fromarray(annotated_image).save(tmp.name)
-            print(f"[DEBUG] Saved annotated_image to: {tmp.name}")    
+ 
 
         traj_colors = (
             ["red"] * len(uc_actions) + ["green"] * len(gc_actions) + ["magenta"]
@@ -394,15 +389,16 @@ def visualize_action_distribution(
             traj_alphas=traj_alphas,
             point_alphas=point_alphas,
         )
-        # obs_image = to_numpy(batch_viz_obs_images[i])
-        obs_image = annotated_image
+        obs_image = to_numpy(batch_viz_obs_images[i])
+        obs_image = np.moveaxis(obs_image, 0, -1)
+        # obs_image = annotated_image
         goal_image = to_numpy(batch_viz_goal_images[i])
         goal_image = np.moveaxis(goal_image, 0, -1)
         ax[1].imshow(obs_image)
         ax[2].imshow(goal_image)
         ax[0].set_title("action predictions")
-        # ax[1].set_title("observation")
-        ax[1].set_title(f"obs (best id: {best_idx}): {scores[best_idx]:.2f}")
+        ax[1].set_title("observation")
+        # ax[1].set_title(f"obs (best id: {best_idx}): {scores[best_idx]:.2f}")
         ax[2].set_title(
             f"goal: label={np_distance_labels[i]} gc_dist={gc_distances_avg[i]:.2f}±{gc_distances_std[i]:.2f}"
         )

@@ -139,11 +139,7 @@ class VLMTrajectoryScorer:
         annotated_np = np.array(annotated)
         print(f"[DEBUG score] annotated_np shape: {annotated_np.shape}, dtype: {annotated_np.dtype}, min={annotated_np.min()}, max={annotated_np.max()}")
         
-        # 临时保存标注图像来验证
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            annotated.save(tmp.name)
-            print(f"[DEBUG score] Saved annotated image to: {tmp.name}")
+
         
         # #test
         # plt.imshow(annotated)
@@ -169,7 +165,7 @@ class VLMTrajectoryScorer:
         return {
             "scores": scores,
             "raw_output": raw_output,
-            "annotated_image": annotated,
+            "annotated_image": annotated_np,
         }
 
     def _parse_scores(self, text, num_trajs):
