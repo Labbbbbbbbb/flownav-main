@@ -5,6 +5,7 @@ from io import BytesIO
 from pathlib import Path
 
 import numpy as np
+import time
 from PIL import Image
 from volcenginesdkarkruntime import Ark
 from dotenv import load_dotenv
@@ -60,13 +61,14 @@ class VLMTrajectoryScorer:
         Returns:
             PIL Image with trajectories drawn on it.
         """
-        print(f"[DEBUG render] Input trajectories type: {type(trajectories)}, length: {len(trajectories) if isinstance(trajectories, (list, tuple, np.ndarray)) else 'N/A'}")
-        if isinstance(trajectories, np.ndarray):
-            print(f"[DEBUG render] trajectories is ndarray with shape: {trajectories.shape}")
+        # print(f"[DEBUG render] Input trajectories type: {type(trajectories)}, length: {len(trajectories) if isinstance(trajectories, (list, tuple, np.ndarray)) else 'N/A'}")
+        # if isinstance(trajectories, np.ndarray):
+            # print(f"[DEBUG render] trajectories is ndarray with shape: {trajectories.shape}")
+            # pass
         if isinstance(obs_image, np.ndarray):
             obs_image = Image.fromarray(obs_image)
         img = obs_image.copy().convert("RGB")
-        print(f"[DEBUG render] img size: {img.size}")
+        # print(f"[DEBUG render] img size: {img.size}")
 
         from PIL import ImageDraw, ImageFont
 
@@ -80,7 +82,7 @@ class VLMTrajectoryScorer:
         for idx, traj in enumerate(trajectories):
             color = TRAJ_COLORS[idx % len(TRAJ_COLORS)]
             points = [(float(x), float(y)) for x, y in traj]
-            print(f"[DEBUG render] Trajectory {idx}: {len(points)} points, color={color}")
+            # print(f"[DEBUG render] Trajectory {idx}: {len(points)} points, color={color}")
 
             # Draw trajectory line
             if len(points) >= 2:
@@ -145,7 +147,9 @@ class VLMTrajectoryScorer:
         Returns:
             dict with "scores" (list of floats) and "raw_output" (str).
         """
+        t0 = time.perf_counter()
         annotated = self.render_trajectories(obs_image, trajectories)   #做好标签的图像
+        t_render = time.perf_counter()
         # print(f"[DEBUG score] annotated type: {type(annotated)}, size: {annotated.size if hasattr(annotated, 'size') else 'N/A'}")
         
         # Convert to numpy for inspection
@@ -177,13 +181,23 @@ class VLMTrajectoryScorer:
         #         for block in item.content:
         #             if hasattr(block, "text"):
         #                 raw_output += block.text
-        scores=None
-        raw_output=None
+        scores = None
+        raw_output = None
         # scores = self._parse_scores(raw_output, len(trajectories))
+        # timings: render measured; encode/request/parse not measured unless request path enabled
+        timings = {
+            "render": float(t_render - t0),
+            "encode": None,
+            "request": None,
+            "parse": None,
+            "total": None,
+        }
+        print(f"[TIMINGS] render={timings['render']:.3f}s")
         return {
             "scores": scores,
             "raw_output": raw_output,
             "annotated_image": annotated,
+            "timings": timings,
         }
 
     def _parse_scores(self, text, num_trajs):
