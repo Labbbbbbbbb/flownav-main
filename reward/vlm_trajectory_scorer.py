@@ -5,6 +5,7 @@ from io import BytesIO
 from pathlib import Path
 
 import numpy as np
+import time
 from PIL import Image
 from volcenginesdkarkruntime import Ark
 from dotenv import load_dotenv
@@ -145,7 +146,9 @@ class VLMTrajectoryScorer:
         Returns:
             dict with "scores" (list of floats) and "raw_output" (str).
         """
+        t0 = time.perf_counter()
         annotated = self.render_trajectories(obs_image, trajectories)   #做好标签的图像
+        t_render = time.perf_counter()
         # print(f"[DEBUG score] annotated type: {type(annotated)}, size: {annotated.size if hasattr(annotated, 'size') else 'N/A'}")
         
         # Convert to numpy for inspection
@@ -177,13 +180,23 @@ class VLMTrajectoryScorer:
         #         for block in item.content:
         #             if hasattr(block, "text"):
         #                 raw_output += block.text
-        scores=None
-        raw_output=None
+        scores = None
+        raw_output = None
         # scores = self._parse_scores(raw_output, len(trajectories))
+        # timings: render measured; encode/request/parse not measured unless request path enabled
+        timings = {
+            "render": float(t_render - t0),
+            "encode": None,
+            "request": None,
+            "parse": None,
+            "total": None,
+        }
+        print(f"[TIMINGS] render={timings['render']:.3f}s")
         return {
             "scores": scores,
             "raw_output": raw_output,
             "annotated_image": annotated,
+            "timings": timings,
         }
 
     def _parse_scores(self, text, num_trajs):
