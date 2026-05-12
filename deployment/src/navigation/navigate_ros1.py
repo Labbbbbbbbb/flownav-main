@@ -8,6 +8,8 @@ import yaml
 import argparse
 import time
 import pickle
+import json
+from datetime import datetime
 from PIL import Image as PILImage,ImageDraw, ImageFont
 from pathlib import Path
 import sys
@@ -175,74 +177,94 @@ def main(args):
                            for g_img in topomap[start:end + 1]]
             goal_images = torch.concat(goal_images, dim=0)
 
-            # 模型推理
+            # 模型推理（带时间戳）
             with torch.no_grad():
-                # 预测距离以更新最近节点
+                timeline = {}
+                timeline["loop_start_ts"] = datetime.now().isoformat()
+                t0 = time.perf_counter()
+
+                # vision encoder
+                t_vision_start = time.perf_counter()
                 obs_repeat = obs_images.repeat(len(goal_images), 1, 1, 1)
                 mask_repeat = mask.repeat(len(goal_images))
                 obsgoal_cond = model('vision_encoder', obs_img=obs_repeat, goal_img=goal_images, input_goal_mask=mask_repeat)
-                
+                t_vision_end = time.perf_counter()
+                timeline["vision_start_ts"] = datetime.now().isoformat()
+                timeline["vision_ms"] = (t_vision_end - t_vision_start) * 1000.0
+
+                # distance prediction
+                t_dist_start = time.perf_counter()
                 dists = model("dist_pred_net", obsgoal_cond=obsgoal_cond)
+                t_dist_end = time.perf_counter()
                 dists = to_numpy(dists.flatten())
-                min_idx = np.argmin(dists)  #返回的是当前窗口中的索引
-                closest_node = min_idx + start  #转换为全局索引
-                #closest_node用来判断当前的位置在哪，同时为更新下一轮搜索窗口中心、判断是否到达终点
-                
-                # 选取局部目标点 本轮动作生成用的子目标索引
-                #如果当前的目标的dist已经小于阈值了就跨到下一个目标
+                timeline["dist_start_ts"] = datetime.now().isoformat()
+                timeline["dist_ms"] = (t_dist_end - t_dist_start) * 1000.0
+
+                min_idx = np.argmin(dists)
+                closest_node = min_idx + start
+
+                # choose subgoal and prepare obs_cond
+                t_select_start = time.perf_counter()
                 sg_idx = min(min_idx + int(dists[min_idx] < args.close_threshold), len(obsgoal_cond) - 1)
-                obs_cond = obsgoal_cond[sg_idx].unsqueeze(0)  #从局部窗口中选取一个目标条件作为动作生成的输入
-                
+                obs_cond = obsgoal_cond[sg_idx].unsqueeze(0)
                 if len(obs_cond.shape) == 2:
                     obs_cond = obs_cond.repeat(args.num_samples, 1)
                 else:
                     obs_cond = obs_cond.repeat(args.num_samples, 1, 1)
+                t_select_end = time.perf_counter()
+                timeline["select_ms"] = (t_select_end - t_select_start) * 1000.0
 
-                # --- MeanFlow / FlowNav 核心：ODE 推理 ---
+                # sampling / one-step MeanFlow
+                t_sample_start = time.perf_counter()
                 noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
-                
-                # # 使用 Euler 方法求解 ODE (Flow Matching)
-                # traj = torchdiffeq.odeint(
-                #     lambda t, x: model.forward("noise_pred_net", sample=x, timestep=t, global_cond=obs_cond),
-                #     noisy_action,
-                #     torch.linspace(0, 1, args.k_steps, device=device),
-                #     atol=1e-4, rtol=1e-4, method="euler",
-                # )
-                #traj:[num_steps, num_samples, len_traj_pred, 2]
-
-                # Navigation — one-step MeanFlow
-                
                 t = torch.ones(noisy_action.shape[0], device=device)
                 h = torch.ones(noisy_action.shape[0], device=device)
-                u = model.noise_pred_net(
-                    sample=noisy_action, 
-                    timestep=t, 
-                    stoptime=h, 
-                    global_cond=obs_cond
-                )
-                traj=noisy_action - u       #单步生成 只有一个时间步  不用再取traj[-1]
-
+                t_noise_start = time.perf_counter()
+                u = model.noise_pred_net(sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond)
+                t_noise_end = time.perf_counter()
+                traj = noisy_action - u
                 naction = to_numpy(get_action(traj))
-                
-                
-                ##使用VLM评估分数
-                projected_traj = Trajprojector.project_points(naction)  #shape=(B，T，2)的uv坐标
-                # 从堆叠的 context tensor 中取最后一帧，并转为 (H, W, 3) uint8
+                t_sample_end = time.perf_counter()
+                timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
+                timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
+
+                # projection + prepare image
+                t_proj_start = time.perf_counter()
+                projected_traj = Trajprojector.project_points(naction)
                 last_obs = obs_images[0, -3:, :, :].detach().cpu()
                 mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
                 std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
                 last_obs = last_obs * std + mean
                 last_obs = torch.clamp(last_obs, 0.0, 1.0)
-                obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8) 
-
-                #(640,480)->(96,96)
+                obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8)
                 projected_traj = projected_traj * np.array([96.0/640.0, 96.0/480.0])
                 projected_traj[..., 0] = 96.0 - projected_traj[..., 0]
+                t_proj_end = time.perf_counter()
+                timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
 
-                score_result= Scorer.score(obs_img_np, projected_traj)
-                scores = score_result["scores"]  # scores shape=(num_samples,)
-                annotated_PIL = score_result["annotated_image"]  # annotated_image shape=(H, W, 3) uint8
-                best_idx = int(np.argmax(scores))
+                # VLM scoring (may be local or remote) -- measure end-to-end call
+                t_vlm_start = time.perf_counter()
+                score_result = Scorer.score(obs_img_np, projected_traj)
+                t_vlm_end = time.perf_counter()
+                scores = score_result.get("scores")
+                annotated_PIL = score_result.get("annotated_image")
+                timeline["vlm_call_ms"] = (t_vlm_end - t_vlm_start) * 1000.0
+
+                # selection
+                t_sel2_start = time.perf_counter()
+                best_idx = int(np.argmax(scores)) if scores is not None else 0
+                t_sel2_end = time.perf_counter()
+                timeline["selection_ms"] = (t_sel2_end - t_sel2_start) * 1000.0
+
+                t_end = time.perf_counter()
+                timeline["loop_total_ms"] = (t_end - t0) * 1000.0
+                timeline["loop_end_ts"] = datetime.now().isoformat()
+
+                # attach per-step timestamps if available from scorer
+                if isinstance(score_result, dict) and "timings" in score_result:
+                    timeline["scorer_timings"] = score_result["timings"]
+
+                print("[TIMELINE] ", json.dumps(timeline, ensure_ascii=False))
                 
                 
                 # draw=ImageDraw.Draw(annotated_PIL)

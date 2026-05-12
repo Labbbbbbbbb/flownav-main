@@ -61,13 +61,14 @@ class VLMTrajectoryScorer:
         Returns:
             PIL Image with trajectories drawn on it.
         """
-        print(f"[DEBUG render] Input trajectories type: {type(trajectories)}, length: {len(trajectories) if isinstance(trajectories, (list, tuple, np.ndarray)) else 'N/A'}")
-        if isinstance(trajectories, np.ndarray):
-            print(f"[DEBUG render] trajectories is ndarray with shape: {trajectories.shape}")
+        # print(f"[DEBUG render] Input trajectories type: {type(trajectories)}, length: {len(trajectories) if isinstance(trajectories, (list, tuple, np.ndarray)) else 'N/A'}")
+        # if isinstance(trajectories, np.ndarray):
+            # print(f"[DEBUG render] trajectories is ndarray with shape: {trajectories.shape}")
+            # pass
         if isinstance(obs_image, np.ndarray):
             obs_image = Image.fromarray(obs_image)
         img = obs_image.copy().convert("RGB")
-        print(f"[DEBUG render] img size: {img.size}")
+        # print(f"[DEBUG render] img size: {img.size}")
 
         from PIL import ImageDraw, ImageFont
 
@@ -81,7 +82,7 @@ class VLMTrajectoryScorer:
         for idx, traj in enumerate(trajectories):
             color = TRAJ_COLORS[idx % len(TRAJ_COLORS)]
             points = [(float(x), float(y)) for x, y in traj]
-            print(f"[DEBUG render] Trajectory {idx}: {len(points)} points, color={color}")
+            # print(f"[DEBUG render] Trajectory {idx}: {len(points)} points, color={color}")
 
             # Draw trajectory line
             if len(points) >= 2:
