@@ -2,7 +2,7 @@
 TRAJ_COLORS = [
     (255, 0, 0),      # red
     (0, 200, 0),      # green
+    (255, 165, 0),    # yellow
     (0, 100, 255),    # blue
-    (255, 165, 0),    # orange
     (200, 0, 255),    # purple
 ]

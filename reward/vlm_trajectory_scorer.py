@@ -35,8 +35,8 @@ class VLMTrajectoryScorer:
             api_key="ollama",
             base_url="http://localhost:11434/v1"
         )
-        # self.model = "moondream"
-        self.model = "qwen3.5:0.8b"
+        self.model = "moondream"
+        # self.model = "qwen3.5:0.8b"
         self.num_trajectories = num_trajectories
 
     def render_trajectories(self, obs_image, trajectories):
@@ -102,9 +102,16 @@ class VLMTrajectoryScorer:
         return f"data:image/png;base64,{encoded}"
 
     def _build_input(self, image_base64, task_description=""):
-        
+        score_format = ", ".join(f"s{i + 1}" for i in range(self.num_trajectories))
+        color_names = ["red", "green","yellow", "blue", "purple"]
+        color_list = ", ".join(
+            f"{color_names[i % len(color_names)]}" for i in range(self.num_trajectories)
+        )
+
         prompt_text = TRAJECTORY_SCORE_PROMPT.format(
             num_trajectories=self.num_trajectories,
+            score_format=score_format,
+            color_list=color_list,
             task_description=task_description if task_description else "Navigate safely and efficiently.",
         )
         return [
@@ -153,9 +160,23 @@ class VLMTrajectoryScorer:
         )
         # Extract text from the response output messages
         raw_output = ""
-        print("VLM response output:", raw_output)
+        # print("VLM response output:", raw_output)
         raw_output = response.choices[0].message.content
+        '''
+        choice = response.choices[0]
+        msg = getattr(choice, "message", None)
+        if msg is not None:
+            # Primary: explicit content field
+            raw_output = getattr(msg, "content", "") or ""
+            # Secondary: some models put chain-of-thought in `reasoning`
+            if not raw_output.strip():
+                raw_output = getattr(msg, "reasoning", "") or ""
+        # Last resort: stringify whole response for debugging
+        if not raw_output.strip():
+            raw_output = str(response)
         print("VLM response output:", raw_output)
+        '''
+        print("VLM response output:", response)
         
 
         scores = self._parse_scores(raw_output, len(trajectories))
@@ -167,13 +188,19 @@ class VLMTrajectoryScorer:
 
     def _parse_scores(self, text, num_trajs):
         """Parse <Scores>[s1, s2, ...]</Scores> from VLM output."""
-        m = re.search(r"<Scores>\s*\[([^\]]+)\]\s*</Scores>", text)
+        m = re.search(r"<Scores>\s*\[([^\]]+)\]\s*</Scores>", text, re.DOTALL)
         if m:
             parts = m.group(1).split(",")
             try:
                 scores = [float(s.strip()) for s in parts[:num_trajs]]
                 if len(scores) == num_trajs:
                     return scores
+            except ValueError:
+                pass
+        simple_numbers = re.findall(r"-?\d+(?:\.\d+)?", text)
+        if len(simple_numbers) == num_trajs:
+            try:
+                return [float(value) for value in simple_numbers]
             except ValueError:
                 pass
         # Fallback: equal scores
