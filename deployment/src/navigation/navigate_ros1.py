@@ -55,7 +55,6 @@ context_queue = []
 obs_img = None
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 def tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> np.ndarray:
     """Convert a normalized CHW tensor back to an RGB uint8 image for visualization."""
     mean = torch.tensor([0.485, 0.456, 0.406], device=image_tensor.device).view(3, 1, 1)
@@ -268,6 +267,8 @@ def main(args):
                     annotated_np,
                     goal_img_np,
                 ])
+                if args.vis_scale != 1.0:
+                    vis_img = cv2.resize(vis_img, None, fx=args.vis_scale, fy=args.vis_scale, interpolation=cv2.INTER_LINEAR)
                 cv2.imshow('Observation (left) vs Goal (right)', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
                 cv2.waitKey(1)
                 
@@ -318,6 +319,7 @@ if __name__ == "__main__":
     parser.add_argument("--radius", "-r", default=4, type=int) #原来是4
     parser.add_argument("--close_threshold", "-t", default=3, type=int)
     parser.add_argument("--goal-node", "-g", default=-1, type=int)
+    parser.add_argument("--vis-scale", default=5.0, type=float, help="可视化窗口缩放倍数（1.0=原始, 1.5=放大1.5倍等）")
     parser.add_argument("--num-samples", "-n", default=8, type=int)
     
     args = parser.parse_args()
