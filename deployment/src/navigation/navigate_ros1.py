@@ -159,7 +159,7 @@ def main(args):
 
     # 7. 主循环
     while not rospy.is_shutdown():
-        chosen_waypoint = np.zeros(4)
+        waypoint_sequence = np.zeros((8, 2))  # 初始化 8 个 2D waypoint
 
         if len(context_queue) > context_size:
             # 预处理观测图像
@@ -300,16 +300,22 @@ def main(args):
                 # 选择分数最高的轨迹对应的 waypoint 作为输出
                 # chosen_waypoint = naction[best_idx][args.waypoint]
                 
-                # 发布第一个样本的指定 waypoint
-                chosen_waypoint = naction[0][args.waypoint]  #直接取第一个样本，可以加入api进行选择
+                # 发布前 8 个 waypoint：每个点单独发一条消息，供 ROSData 维护历史队列
+                waypoint_sequence = naction[0][:8]  # 取前 8 步作为 waypoint 序列
+                if len(waypoint_sequence) < 8:
+                    # 如果不足 8 步，用最后一个点填充
+                    waypoint_sequence = np.vstack([
+                        waypoint_sequence,
+                        np.tile(waypoint_sequence[-1], (8 - len(waypoint_sequence), 1))
+                    ])
 
             print(f"[NAV] 最近节点: {closest_node} | 距离: {dists[min_idx]:.2f} | 目标: {goal_node}")
 
-        # 发布 Waypoint 给 pd_controller
-        
+        # 发布整条 waypoint 序列（单条消息，扁平化）给 pd_controller
         waypoint_msg = Float32MultiArray()
-        waypoint_msg.data = chosen_waypoint.tolist()
+        waypoint_msg.data = waypoint_sequence.astype(np.float32).reshape(-1).tolist()
         waypoint_pub.publish(waypoint_msg)
+        print(f"[PUB] 发布整条轨迹 waypoint，点数={len(waypoint_sequence)}")
 
         # 发布候选轨迹
         

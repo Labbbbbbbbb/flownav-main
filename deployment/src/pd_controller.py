@@ -24,10 +24,11 @@ RATE = 9
 EPS = 1e-8
 WAYPOINT_TIMEOUT = 1 # seconds # TODO: tune this
 FLIP_ANG_VEL = np.pi/4
+WAYPOINT_ARRIVAL_THRESHOLD = 0.05  # meters, threshold to consider a waypoint reached
 
 # GLOBALS
 vel_msg = Twist()
-waypoint = ROSData(WAYPOINT_TIMEOUT, name="waypoint")
+waypoint = ROSData(WAYPOINT_TIMEOUT, queue_size=8, name="waypoint")
 reached_goal = False
 reverse_mode = False
 current_yaw = None
@@ -64,9 +65,10 @@ def pd_controller(waypoint: np.ndarray) -> Tuple[float]:
 
 def callback_drive(waypoint_msg: Float32MultiArray):
 	"""Callback function for the waypoint subscriber"""
-	global vel_msg
-	print("seting waypoint")
-	waypoint.set(waypoint_msg.data)
+	data = np.array(waypoint_msg.data)
+	# Expect a flattened trajectory: [x1,y1, x2,y2, ...] or [x1,y1,hx1,hy1, x2,y2,hx2,hy2, ...]
+	waypoint.set(data)
+	print(f"[CALLBACK] 收到整条轨迹 waypoint (扁平数组长度={len(data)}): {data}")
 	
 	
 def callback_reached_goal(reached_goal_msg: Bool):
@@ -82,7 +84,8 @@ def main():
 	reached_goal_sub = rospy.Subscriber(REACHED_GOAL_TOPIC, Bool, callback_reached_goal, queue_size=1)
 	vel_out = rospy.Publisher(VEL_TOPIC, Twist, queue_size=1)
 	rate = rospy.Rate(RATE)
-	print("Registered with master node. Waiting for waypoints...")
+	print("[*] PD Controller 就绪。等待 waypoint 序列...")
+
 	while not rospy.is_shutdown():
 		vel_msg = Twist()
 		if reached_goal:
@@ -90,12 +93,47 @@ def main():
 			print("Reached goal! Stopping...")
 			return
 		elif waypoint.is_valid(verbose=True):
-			v, w = pd_controller(waypoint.get())
-			if reverse_mode:
-				v *= -1
-			vel_msg.linear.x = v
-			vel_msg.angular.z = w
-			print(f"publishing new vel: {v}, {w}")
+			data = waypoint.get()
+			if data is None:
+				vel_out.publish(vel_msg)
+				continue
+			# parse flattened trajectory into Nx2 or Nx4
+			n = len(data)
+			if n >= 4 and n % 4 == 0:
+				waypoints = data.reshape(-1, 4)
+			elif n >= 2 and n % 2 == 0:
+				waypoints = data.reshape(-1, 2)
+			else:
+				print(f"[WARN] 无法解析收到的 waypoint 数据，长度为 {n}")
+				vel_out.publish(vel_msg)
+				continue
+			idx = waypoint.current_waypoint_index
+			if idx >= len(waypoints):
+				# 已完成整条轨迹
+				print("[INFO] 轨迹已完成，清空 waypoint 数据")
+				waypoint.pop_head()
+				vel_out.publish(vel_msg)
+				continue
+			current_wp = waypoints[idx]
+			# 使用 xy 距离判断到达
+			dist = np.linalg.norm(current_wp[:2])
+			print(f"Current idx={idx}, waypoint={current_wp}, dist={dist:.3f}")
+			if dist < WAYPOINT_ARRIVAL_THRESHOLD:
+				# 到达当前 waypoint，前进到下一个
+				waypoint.current_waypoint_index += 1
+				if waypoint.current_waypoint_index >= len(waypoints):
+					print("[INFO] 最后一个 waypoint 已到达，清空 waypoint 数据")
+					waypoint.pop_head()
+					vel_out.publish(vel_msg)
+					continue
+				# 否则在下一次循环继续追踪新的 idx
+			else:
+				v, w = pd_controller(current_wp)
+				if reverse_mode:
+					v *= -1
+				vel_msg.linear.x = v
+				vel_msg.angular.z = w
+				print(f"publishing new vel: {v}, {w}")
 		vel_out.publish(vel_msg)
 		rate.sleep()
 	
