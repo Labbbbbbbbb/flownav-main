@@ -44,10 +44,10 @@ class VLMTrajectoryScorer:
         api_key=None,
         num_trajectories=5,
     ):
-        self.client = Ark(
-            base_url=base_url or os.getenv("ARK_BASE_URL"),
-            api_key=api_key or os.getenv("ARK_API_KEY"),
-        )
+        # self.client = Ark(
+        #     base_url=base_url or os.getenv("ARK_BASE_URL"),
+        #     api_key=api_key or os.getenv("ARK_API_KEY"),
+        # )
         self.model = model or os.getenv("ARK_MODEL", "doubao-seed-2-0-pro-260215")
         self.num_trajectories = num_trajectories
 
