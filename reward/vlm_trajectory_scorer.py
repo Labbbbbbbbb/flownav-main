@@ -9,11 +9,12 @@ from PIL import Image
 from volcenginesdkarkruntime import Ark
 from dotenv import load_dotenv
 
-from reward.prompt import TRAJECTORY_SCORE_PROMPT
+from prompt import TRAJECTORY_SCORE_PROMPT
 from constant import TRAJ_COLORS
 # Load env from reward/ directory (supports both `env` and `.env` filenames)
 load_dotenv(Path(__file__).parent / "env")
 load_dotenv(Path(__file__).parent / ".env")
+from openai import OpenAI
 
 
 class VLMTrajectoryScorer:
@@ -30,11 +31,12 @@ class VLMTrajectoryScorer:
         api_key=None,
         num_trajectories=5,
     ):
-        self.client = Ark(
-            base_url=base_url or os.getenv("ARK_BASE_URL"),
-            api_key=api_key or os.getenv("ARK_API_KEY"),
+        self.client = OpenAI(
+            api_key="ollama",
+            base_url="http://localhost:11434/v1"
         )
-        self.model = model or os.getenv("ARK_MODEL", "doubao-seed-2-0-pro-260215")
+        self.model = "moondream"
+        # self.model = "qwen3.5:0.8b"
         self.num_trajectories = num_trajectories
 
     def render_trajectories(self, obs_image, trajectories):
@@ -100,9 +102,16 @@ class VLMTrajectoryScorer:
         return f"data:image/png;base64,{encoded}"
 
     def _build_input(self, image_base64, task_description=""):
-        """Build Doubao Ark responses API input."""
+        score_format = ", ".join(f"s{i + 1}" for i in range(self.num_trajectories))
+        color_names = ["red", "green","yellow", "blue", "purple"]
+        color_list = ", ".join(
+            f"{color_names[i % len(color_names)]}" for i in range(self.num_trajectories)
+        )
+
         prompt_text = TRAJECTORY_SCORE_PROMPT.format(
             num_trajectories=self.num_trajectories,
+            score_format=score_format,
+            color_list=color_list,
             task_description=task_description if task_description else "Navigate safely and efficiently.",
         )
         return [
@@ -110,17 +119,18 @@ class VLMTrajectoryScorer:
                 "role": "user",
                 "content": [
                     {
-                        "type": "input_image",
-                        "image_url": image_base64,
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image_base64
+                        },
                     },
                     {
-                        "type": "input_text",
+                        "type": "text",
                         "text": prompt_text,
                     },
                 ],
             }
         ]
-
     def score(self, obs_image, trajectories, task_description=""):
         """Score candidate trajectories using the VLM.
 
@@ -133,50 +143,66 @@ class VLMTrajectoryScorer:
             dict with "scores" (list of floats) and "raw_output" (str).
         """
         annotated = self.render_trajectories(obs_image, trajectories)   #做好标签的图像
-        print(f"[DEBUG score] annotated type: {type(annotated)}, size: {annotated.size if hasattr(annotated, 'size') else 'N/A'}")
         
         # Convert to numpy for inspection
-        annotated_np = np.array(annotated)
-        print(f"[DEBUG score] annotated_np shape: {annotated_np.shape}, dtype: {annotated_np.dtype}, min={annotated_np.min()}, max={annotated_np.max()}")
+        # annotated_np = np.array(annotated)
         
 
         
-        # #test
-        # plt.imshow(annotated)
-        # plt.show()
-        # #test
+        #image_b64 = self._image_to_base64(annotated)    #转换成VLM需要的base64格式
+        #input_messages = self._build_input(image_b64, task_description) #构建输入消息，包含图像和文本提示
+        # print("Input messages for VLM:", input_messages)
+        # print("waiting for VLM response output:")
+
+        # response = self.client.chat.completions.create(
+        #     model=self.model,
+        #     messages=input_messages,
+        # )
+        # # Extract text from the response output messages
+        # raw_output = ""
+        # # print("VLM response output:", raw_output)
+        # raw_output = response.choices[0].message.content
+        '''
+        choice = response.choices[0]
+        msg = getattr(choice, "message", None)
+        if msg is not None:
+            # Primary: explicit content field
+            raw_output = getattr(msg, "content", "") or ""
+            # Secondary: some models put chain-of-thought in `reasoning`
+            if not raw_output.strip():
+                raw_output = getattr(msg, "reasoning", "") or ""
+        # Last resort: stringify whole response for debugging
+        if not raw_output.strip():
+            raw_output = str(response)
+        print("VLM response output:", raw_output)
+        '''
+        # print("VLM response output:", response)
         
-        image_b64 = self._image_to_base64(annotated)    #转换成VLM需要的base64格式
-        input_messages = self._build_input(image_b64, task_description) #构建输入消息，包含图像和文本提示
 
-        response = self.client.responses.create(
-            model=self.model,
-            input=input_messages,
-        )
-        # Extract text from the response output messages
-        raw_output = ""
-        for item in response.output:
-            if hasattr(item, "content"):
-                for block in item.content:
-                    if hasattr(block, "text"):
-                        raw_output += block.text
-
-        scores = self._parse_scores(raw_output, len(trajectories))
+        # scores = self._parse_scores(raw_output, len(trajectories))
+        scores=None
+        raw_output=None
         return {
             "scores": scores,
             "raw_output": raw_output,
-            "annotated_image": annotated_np,
+            "annotated_image": annotated,
         }
 
     def _parse_scores(self, text, num_trajs):
         """Parse <Scores>[s1, s2, ...]</Scores> from VLM output."""
-        m = re.search(r"<Scores>\s*\[([^\]]+)\]\s*</Scores>", text)
+        m = re.search(r"<Scores>\s*\[([^\]]+)\]\s*</Scores>", text, re.DOTALL)
         if m:
             parts = m.group(1).split(",")
             try:
                 scores = [float(s.strip()) for s in parts[:num_trajs]]
                 if len(scores) == num_trajs:
                     return scores
+            except ValueError:
+                pass
+        simple_numbers = re.findall(r"-?\d+(?:\.\d+)?", text)
+        if len(simple_numbers) == num_trajs:
+            try:
+                return [float(value) for value in simple_numbers]
             except ValueError:
                 pass
         # Fallback: equal scores
@@ -198,11 +224,12 @@ class VLMTrajectoryScorer:
 if __name__ == "__main__":
     # Example usage
     scorer = VLMTrajectoryScorer(num_trajectories=3)
-    obs_img = np.zeros((480, 640, 3), dtype=np.uint8)  # dummy black image
+    test_img_path = Path(__file__).parent / "test_img.png"
+    obs_img = Image.open(test_img_path).convert("RGB")
     trajs = [
-        np.array([[100, 400], [150, 350], [200, 300]]),
-        np.array([[100, 400], [120, 380], [140, 360]]),
-        np.array([[100, 400], [80, 420], [60, 440]]),
+        np.array([[0, 0], [0, 0], [0, 0]]),
+        np.array([[0, 0], [0, 0], [0, 0]]),
+        np.array([[0, 0], [0, 0], [0, 0]]),
     ]
     result = scorer.score(obs_img, trajs)
     print("Scores:", result["scores"])
