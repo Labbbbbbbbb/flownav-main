@@ -85,6 +85,7 @@ def callback_obs(msg):
 
 def callback_fitted(waypoint_msg: Float32MultiArray):
     """Callback function for the waypoint subscriber"""
+    global fitted_waypoints
     data = np.asarray(waypoint_msg.data, dtype=np.float32)
     # Expect flattened trajectory: [x1,y1, x2,y2, ...] (or with extra heading values)
     if data.size == 0:
@@ -129,7 +130,7 @@ def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
     return msg
 
 def main(args):
-    global context_size, obs_img, trajs_msg
+    global context_size, obs_img, trajs_msg,fitted_waypoints
     
     # 1. 加载模型配置
     with open(MODEL_CONFIG_PATH, "r") as f:
@@ -265,16 +266,23 @@ def main(args):
                 # projection + prepare image
                 t_proj_start = time.perf_counter()
                 projected_traj = Trajprojector.project_points(naction)
-                projected_fitted_traj = Trajprojector.project_points(fitted_waypoints)
-                projected_total_traj = np.vstack([projected_traj, projected_fitted_traj])   #理论上说最后画出来的黑色轨迹就是fitted_traj,但是因为异步不知道会不会错位
+                if fitted_waypoints is not None:
+                    fitted_waypoints=fitted_waypoints.reshape(1, -1, 2)  # (1, 8, 2)
+                    projected_fitted_traj = Trajprojector.project_points(fitted_waypoints)
+                    # projected_total_traj = np.vstack([projected_traj, projected_fitted_traj])   #理论上说最后画出来的黑色轨迹就是fitted_traj,但是因为异步不知道会不会错位
+                    print(f"[PROJECTION] Using fitted waypoints: ")
+                    projected_total_traj = projected_fitted_traj
+                else:
+                    projected_total_traj = projected_traj
+
                 last_obs = obs_images[0, -3:, :, :].detach().cpu()
                 mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
                 std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
                 last_obs = last_obs * std + mean
                 last_obs = torch.clamp(last_obs, 0.0, 1.0)
                 obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8)
-                projected_traj = projected_traj * np.array([96.0/640.0, 96.0/480.0])
-                projected_traj[..., 0] = 96.0 - projected_traj[..., 0]
+                projected_total_traj = projected_total_traj * np.array([96.0/640.0, 96.0/480.0])
+                projected_total_traj[..., 0] = 96.0 - projected_total_traj[..., 0]
                 t_proj_end = time.perf_counter()
                 timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
 
