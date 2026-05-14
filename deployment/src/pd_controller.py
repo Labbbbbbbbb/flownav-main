@@ -8,9 +8,11 @@ from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32MultiArray, Bool
 
 from topic_names import (WAYPOINT_TOPIC, 
-			 			REACHED_GOAL_TOPIC)
+			 			REACHED_GOAL_TOPIC,
+       					FITTED_WAYPOINT_TOPIC)
 from ros_data import ROSData
 from utils import clip_angle
+
 
 # CONSTS
 CONFIG_PATH = "../config/robot.yaml"
@@ -32,6 +34,14 @@ waypoint = ROSData(WAYPOINT_TIMEOUT, queue_size=8, name="waypoint")
 reached_goal = False
 reverse_mode = False
 current_yaw = None
+
+def get_delta(actions: np.ndarray) -> np.ndarray:
+    ex_actions = np.concatenate(
+        [np.zeros((actions.shape[0], 1, actions.shape[-1])), actions], axis=1
+    )
+    delta = ex_actions[:, 1:] - ex_actions[:, :-1]
+    return delta
+
 
 def clip_angle(theta) -> float:
 	"""Clip angle to [-pi, pi]"""
@@ -83,6 +93,7 @@ def main():
 	waypoint_sub = rospy.Subscriber(WAYPOINT_TOPIC, Float32MultiArray, callback_drive, queue_size=1)
 	reached_goal_sub = rospy.Subscriber(REACHED_GOAL_TOPIC, Bool, callback_reached_goal, queue_size=1)
 	vel_out = rospy.Publisher(VEL_TOPIC, Twist, queue_size=1)
+	fitted_waypoint_pub = rospy.Publisher(FITTED_WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
 	rate = rospy.Rate(RATE)
 	print("[*] PD Controller 就绪。等待 waypoint 序列...")
 
@@ -93,48 +104,38 @@ def main():
 			print("Reached goal! Stopping...")
 			return
 		elif waypoint.is_valid(verbose=True):
-			data = waypoint.get()
+			data = waypoint.get()		#data是一个列表，包含了queue_size个waypoint点，每个点是一个numpy数组，形状为(2,)或(4,)
 			if data is None:
 				vel_out.publish(vel_msg)
 				continue
 			# parse flattened trajectory into Nx2 or Nx4
 			n = len(data)
-			if n >= 4 and n % 4 == 0:
-				waypoints = data.reshape(-1, 4)
-			elif n >= 2 and n % 2 == 0:
+			if n >= 2 and n % 2 == 0:
 				waypoints = data.reshape(-1, 2)
 			else:
 				print(f"[WARN] 无法解析收到的 waypoint 数据，长度为 {n}")
 				vel_out.publish(vel_msg)
 				continue
-			idx = waypoint.current_waypoint_index
-			if idx >= len(waypoints):
-				# 已完成整条轨迹
-				print("[INFO] 轨迹已完成，清空 waypoint 数据")
-				waypoint.pop_head()
-				vel_out.publish(vel_msg)
-				continue
-			current_wp = waypoints[idx]
-			# 使用 xy 距离判断到达
-			dist = np.linalg.norm(current_wp[:2])
-			print(f"Current idx={idx}, waypoint={current_wp}, dist={dist:.3f}")
-			if dist < WAYPOINT_ARRIVAL_THRESHOLD:
-				# 到达当前 waypoint，前进到下一个
-				waypoint.current_waypoint_index += 1
-				if waypoint.current_waypoint_index >= len(waypoints):
-					print("[INFO] 最后一个 waypoint 已到达，清空 waypoint 数据")
-					waypoint.pop_head()
-					vel_out.publish(vel_msg)
-					continue
-				# 否则在下一次循环继续追踪新的 idx
-			else:
-				v, w = pd_controller(current_wp)
-				if reverse_mode:
-					v *= -1
-				vel_msg.linear.x = v
-				vel_msg.angular.z = w
-				print(f"publishing new vel: {v}, {w}")
+
+			delta_waypoint=get_delta(np.asarray(waypoints).reshape(1, -1, waypoints.shape[-1])) # 计算相邻waypoint之间的差值，得到每个waypoint相对于前一个waypoint的增量
+			cur_waypoint_elasped_time = (rospy.get_time() - waypoint.last_time_received ) * 1000.0	#单位ms
+			waypoint.current_waypoint_index= cur_waypoint_elasped_time // 200	#每200ms切换到下一个waypoint，待调整
+			waypoint.current_waypoint_index=min(waypoint.current_waypoint_index, len(delta_waypoint) - 1)
+
+			current_wp = delta_waypoint[waypoint.current_waypoint_index]
+
+			print(f"Current idx={waypoint.current_waypoint_index}, waypoint={current_wp}")
+			
+			v, w = pd_controller(current_wp)
+			if reverse_mode:
+				v *= -1
+			vel_msg.linear.x = v
+			vel_msg.angular.z = w
+			print(f"publishing new vel: {v}, {w}")
 		vel_out.publish(vel_msg)
+		waypoint_msg = Float32MultiArray()
+		waypoint_msg.data = waypoints.astype(np.float32).reshape(-1).tolist()
+		fitted_waypoint_pub.publish(waypoint_msg)
 		rate.sleep()
 	
 

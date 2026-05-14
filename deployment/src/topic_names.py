@@ -24,6 +24,7 @@ IMAGE_TOPIC = "/camera/color/image_raw"
 
 # 导航相关话题
 WAYPOINT_TOPIC = "/waypoint"
+FITTED_WAYPOINT_TOPIC = "/fitted_waypoint"
 REACHED_GOAL_TOPIC = "/topoplan/reached_goal"
 SAMPLED_ACTIONS_TOPIC = "/sampled_actions"
 

@@ -138,7 +138,7 @@ class ROSData:
         time_waited = rospy.get_time() - self.last_time_received
         valid =  time_waited < self.timout
         if self.queue_size > 1: #self.queue_size=8!!!
-            valid = valid and self.data is not None and len(self.data) > 0
+            valid = valid and self.data is not None and len(self.data) > 0 and self.current_waypoint_index < len(self.data)
         else:   #self.queue_size=8!!!
             valid = valid and (self.data is not None)
         if verbose and not valid:

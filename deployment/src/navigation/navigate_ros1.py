@@ -50,12 +50,15 @@ IMAGE_TOPIC = "/camera/color/image_raw"
 WAYPOINT_TOPIC = "/waypoint"
 REACHED_GOAL_TOPIC = "/topoplan/reached_goal"
 OVERLAY_TOPIC = "/overlay_image"            #pub
+FITTED_WAYPOINT_TOPIC = "/fitted_waypoint"
+
 # TRAJS_TOPIC = "/candidate_trajs"
 
 # 全局变量
 context_queue = []
 obs_img = None
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+fitted_waypoints = None
 
 def tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> np.ndarray:
     """Convert a normalized CHW tensor back to an RGB uint8 image for visualization."""
@@ -79,7 +82,40 @@ def callback_obs(msg):
         else:
             context_queue.pop(0)
             context_queue.append(obs_img)
-            
+
+def callback_fitted(waypoint_msg: Float32MultiArray):
+    """Callback function for the waypoint subscriber"""
+    data = np.asarray(waypoint_msg.data, dtype=np.float32)
+    # Expect flattened trajectory: [x1,y1, x2,y2, ...] (or with extra heading values)
+    if data.size == 0:
+        print("[CALLBACK] 收到空 waypoint 数据")
+        return
+
+    # Try to reshape to Nx2 (prefer), fallback to Nx4 then take first 2 cols
+    pts = None
+    if data.size % 2 == 0:
+        pts = data.reshape(-1, 2)
+    else:
+        # fallback: try 4-cols then take first two
+        if data.size % 4 == 0:
+            pts = data.reshape(-1, 4)[:, :2]
+        else:
+            # last resort: treat as a single point
+            pts = data.reshape(-1, 1)
+            pts = np.pad(pts, ((0, 0), (0, 1)), mode='edge')
+
+    # Normalize to exactly 8 x 2 like waypoint_sequence
+    N_TARGET = 8
+    if pts.shape[0] < N_TARGET:
+        last = pts[-1]
+        pad = np.tile(last, (N_TARGET - pts.shape[0], 1))
+        pts = np.vstack([pts, pad])
+    elif pts.shape[0] > N_TARGET:
+        pts = pts[:N_TARGET]
+
+    fitted_waypoints = pts.astype(np.float32)
+    print(f"[CALLBACK] 收到整条平滑 waypoint，点数={pts.shape[0]}, dtype={fitted_waypoints.dtype}")
+
 @staticmethod
 def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
     msg = Image()
@@ -142,22 +178,20 @@ def main(args):
     Trajprojector = TrajectoryProjector(dataset_name="deploy")
     Scorer=VLMTrajectoryScorer()
     
-    # 5. 可视化初始化
-    # visualizer = GoalVisualizer(display=True, save=False)
     
-    # 6. ROS 1 节点初始化
+    # 5. ROS 1 节点初始化
     rospy.init_node("MEANFLOW_NAVIGATION", anonymous=False)
     rospy.Subscriber(IMAGE_TOPIC, Image, callback_obs, queue_size=1)
     waypoint_pub = rospy.Publisher(WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
     goal_pub = rospy.Publisher(REACHED_GOAL_TOPIC, Bool, queue_size=1)
     # trajs_pub = rospy.Publisher(TRAJS_TOPIC, Float32MultiArray, queue_size=1)
     overlay_pub = rospy.Publisher(OVERLAY_TOPIC, Image, queue_size=1)
-    
+    fitted_waypoint_sub = rospy.Subscriber(FITTED_WAYPOINT_TOPIC, Float32MultiArray, callback_fitted, queue_size=1) # 订阅平滑后的 waypoint，供 pd_controller 调试使用
     ros_rate = rospy.Rate(RATE)
     print(f"[*] ROS 1 节点就绪。等待图像话题: {IMAGE_TOPIC}")
     annotated_image_msg = None
 
-    # 7. 主循环
+    # 6. 主循环
     while not rospy.is_shutdown():
         waypoint_sequence = np.zeros((8, 2))  # 初始化 8 个 2D waypoint
 
@@ -231,6 +265,8 @@ def main(args):
                 # projection + prepare image
                 t_proj_start = time.perf_counter()
                 projected_traj = Trajprojector.project_points(naction)
+                projected_fitted_traj = Trajprojector.project_points(fitted_waypoints)
+                projected_total_traj = np.vstack([projected_traj, projected_fitted_traj])   #理论上说最后画出来的黑色轨迹就是fitted_traj,但是因为异步不知道会不会错位
                 last_obs = obs_images[0, -3:, :, :].detach().cpu()
                 mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
                 std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
@@ -244,7 +280,7 @@ def main(args):
 
                 # VLM scoring (may be local or remote) -- measure end-to-end call
                 t_vlm_start = time.perf_counter()
-                score_result = Scorer.score(obs_img_np, projected_traj)
+                score_result = Scorer.score(obs_img_np, projected_total_traj)       
                 t_vlm_end = time.perf_counter()
                 scores = score_result.get("scores")
                 annotated_PIL = score_result.get("annotated_image")
@@ -293,9 +329,7 @@ def main(args):
                     vis_img = cv2.resize(vis_img, None, fx=args.vis_scale, fy=args.vis_scale, interpolation=cv2.INTER_LINEAR)
                 cv2.imshow('Observation (left) vs Goal (right)', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
                 cv2.waitKey(1)
-                
-                # 实时可视化：观测图 + 目标图
-                # visualizer.update(annotated_np, goal_images[sg_idx])
+
 
                 # 选择分数最高的轨迹对应的 waypoint 作为输出
                 # chosen_waypoint = naction[best_idx][args.waypoint]
@@ -317,10 +351,7 @@ def main(args):
         waypoint_pub.publish(waypoint_msg)
         print(f"[PUB] 发布整条轨迹 waypoint，点数={len(waypoint_sequence)}")
 
-        # 发布候选轨迹
-        
-        # trajs_msg.data = naction.astype(np.float32).reshape(-1).tolist()
-        # trajs_pub.publish(trajs_msg)
+
         
 
         

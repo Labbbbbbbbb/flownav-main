@@ -24,6 +24,7 @@ except ModuleNotFoundError:
         "cyan",
         "orange",
         "white",
+        "black",
     ]
 # Load env from reward/ directory (supports both `env` and `.env` filenames)
 load_dotenv(Path(__file__).parent / "env")
