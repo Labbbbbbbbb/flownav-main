@@ -104,7 +104,6 @@ def save_images_and_actions(self):
 
 def main(args):
     global context_size,im_idx,cur_img,cur_naction,cur_exp_pkl_dir,cur_exp_im_dir
-    context_size = model_params["context_size"]
     
     # 1. 加载模型配置
     with open(MODEL_CONFIG_PATH, "r") as f:
@@ -114,6 +113,7 @@ def main(args):
     with open(model_config_path, "r") as f:
         model_params = yaml.safe_load(f)
 
+    context_size = model_params["context_size"]
     
     exp_dir = args.exp_dir
     os.makedirs(exp_dir, exist_ok=True)
@@ -314,7 +314,13 @@ if __name__ == "__main__":
     parser.add_argument("--goal-node", "-g", default=-1, type=int)
     parser.add_argument("--vis-scale", default=5.0, type=float, help="可视化窗口缩放倍数（1.0=原始, 1.5=放大1.5倍等）")
     parser.add_argument("--num-samples", "-n", default=8, type=int)
-    
+    parser.add_argument(
+        "--exp_dir",
+        "-s",
+        default="explore_topomap",
+        type=str,
+        help="Path to store the exploration topomap",
+    )
     args = parser.parse_args()
     main(args)
 
