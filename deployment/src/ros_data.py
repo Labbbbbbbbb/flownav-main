@@ -57,7 +57,9 @@ class ROSData:
         cur_idx = int(self.current_waypoint_index)
         start = max(0, cur_idx - int(self.Nfree))
         end = min(prev.shape[0], cur_idx + 1)
-        hist = prev[start:end]
+        window = prev[start:end]
+        base = prev[start - 1] if start > 0 else np.zeros_like(prev[0])
+        hist = window - base
         if hist.shape[0] == 0:
             return new_points
 
