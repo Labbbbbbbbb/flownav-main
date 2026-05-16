@@ -54,12 +54,14 @@ class ROSData:
             return new_points
 
         # window in previous data: [current_idx-Nfree, current_idx] (inclusive on idx)
-        cur_idx = int(self.current_waypoint_index)
+        cur_idx = int(self.last_exec_index)
         start = max(0, cur_idx - int(self.Nfree))
         end = min(prev.shape[0], cur_idx + 1)
         window = prev[start:end]
-        base = prev[start - 1] if start > 0 else np.zeros_like(prev[0])
+        base = prev[end - 1] if start > 0 else np.zeros_like(prev[0])
         hist = window - base
+        print(f"[DEBUG _smooth] current_idx={cur_idx}, window shape={window.shape}, hist shape={hist.shape}, cur_idx={cur_idx}, start={start}, end={end}")
+        print(f"[DEBUG _smooth] hist: {hist}, nwew_points: {new_points}")
         if hist.shape[0] == 0:
             return new_points
 
@@ -76,43 +78,46 @@ class ROSData:
         # 使用带边界条件的三次多项式最小二乘拟合：
         # 约束 p(0) = last_old_point, p'(0) = v0 （从历史末尾估计），最小化 sum||p(t_i)-new_i||^2
         # t_i 取 1..k
-        # t = np.arange(1, k + 1, dtype=np.float32)
-        # T2 = (t ** 2).reshape(-1, 1)
-        # T3 = (t ** 3).reshape(-1, 1)
-        # A = np.hstack([T2, T3])  # 用于求解 c,d
+        
+        t = np.arange(1, k + 1, dtype=np.float32)
+        T2 = (t ** 2).reshape(-1, 1)
+        T3 = (t ** 3).reshape(-1, 1)
+        A = np.hstack([T2, T3])  # 用于求解 c,d
 
-        # # a = p(0) = old_tail[-1]
-        # a = old_tail[-1]
-        # # 估计 p'(0)=b，使用历史末尾两点差分（若可用），否则用 new 的第一个差分近似
-        # if hist.shape[0] >= 2:
-        #     b = old_tail[-1] - hist[-2]
-        # else:
-        #     # fallback: estimate from new_arr first two points if possible
-        #     if new_arr.shape[0] >= 2:
-        #         b = new_arr[1] - new_arr[0]
-        #     else:
-        #         b = np.zeros_like(a)
+        # a = p(0) = old_tail[-1]
+        a = old_tail[-1]
+        # 估计 p'(0)=b，使用历史末尾两点差分（若可用），否则用 new 的第一个差分近似
+        if hist.shape[0] >= 2:
+            b = old_tail[-1] - hist[-2]
+        else:
+            # fallback: estimate from new_arr first two points if possible
+            if new_arr.shape[0] >= 2:
+                b = new_arr[1] - new_arr[0]
+            else:
+                b = np.zeros_like(a)
 
-        # # 为 x, y（或维度）分别求解 c,d
-        # rhs = new_arr[:k] - (a + (b * t.reshape(-1, 1)))
-        # try:
-        #     # least squares 求解 A @ [c; d] = rhs  （对每维独立）
-        #     params, *_ = np.linalg.lstsq(A, rhs, rcond=None)
-        #     # params 形状 (2, dim)
-        #     c = params[0]
-        #     d = params[1]
-        #     # 生成平滑后的前 k 点
-        #     fitted = (a + b * t.reshape(-1, 1)) + (c * (t ** 2).reshape(-1, 1)) + (d * (t ** 3).reshape(-1, 1))
-        #     new_arr[:k] = fitted
-        # except Exception:
-            # 若最小二乘失败，回退到线性融合
-        for i in range(k):
-            alpha = float(i + 1) / float(k + 1)
-            new_arr[i] = (1.0 - alpha) * old_tail[i] + alpha * new_arr[i]
+        # 为 x, y（或维度）分别求解 c,d
+        rhs = new_arr[:k] - (a + (b * t.reshape(-1, 1)))
+        try:
+            # least squares 求解 A @ [c; d] = rhs  （对每维独立）
+            params, *_ = np.linalg.lstsq(A, rhs, rcond=None)
+            # params 形状 (2, dim)
+            c = params[0]
+            d = params[1]
+            # 生成平滑后的前 k 点
+            fitted = (a + b * t.reshape(-1, 1)) + (c * (t ** 2).reshape(-1, 1)) + (d * (t ** 3).reshape(-1, 1))
+            new_arr[:k] = fitted
+        except Exception:
+            pass
+            # 若最小二乘失败，回退到线性融合  #  理论上不应该线性融合
+            # for i in range(k):
+            #     alpha = float(i + 1) / float(k + 1)
+            #     new_arr[i] = (1.0 - alpha) * old_tail[i] + alpha * new_arr[i]
 
         return new_arr.tolist()
     
     def set(self, data):        #self.queue_size=8!!!
+        self.last_exec_index = self.current_waypoint_index 
         time_waited = rospy.get_time() - self.last_time_received
         self.lastdata = copy.deepcopy(self.data)
         if self.queue_size == 1:
@@ -125,7 +130,7 @@ class ROSData:
             # 扁平化数据 -> waypoint 点列表（如 8*xy）
             points = self._to_waypoint_list(data)
             # 对新传入前 Nfree 点做平滑，参考 lastdata 的 [idx-Nfree, idx] 段
-            # points = self._smooth_new_waypoints(points)
+            points = self._smooth_new_waypoints(points)
 
             for pt in points:
                 if len(self.data) == self.queue_size:
@@ -133,7 +138,6 @@ class ROSData:
                 self.data.append(pt)
 
         self.last_time_received = rospy.get_time()
-        self.last_exec_index = self.current_waypoint_index 
         
         
     def is_valid(self, verbose: bool = False):
