@@ -269,9 +269,9 @@ def main(args):
                 if fitted_waypoints is not None:
                     fitted_waypoints=fitted_waypoints.reshape(1, -1, 2)  # (1, 8, 2)
                     projected_fitted_traj = Trajprojector.project_points(fitted_waypoints)
-                    # projected_total_traj = np.vstack([projected_traj, projected_fitted_traj])   #理论上说最后画出来的黑色轨迹就是fitted_traj,但是因为异步不知道会不会错位
-                    print(f"[PROJECTION] Using fitted waypoints: ")
-                    projected_total_traj = projected_fitted_traj
+                    projected_total_traj = np.vstack([projected_traj, projected_fitted_traj])   #理论上说最后画出来的黑色轨迹就是fitted_traj,但是因为异步不知道会不会错位
+                    # print(f"[PROJECTION] Using fitted waypoints: ")
+                    # projected_total_traj = projected_fitted_traj
                 else:
                     projected_total_traj = projected_traj
 
