@@ -3,7 +3,7 @@ MeanFlow training step — replaces CFM with JVP-based loss.
 
 Key differences from flownav/training/train.py:
 - Dual timestep (t, r) sampling instead of ConditionalFlowMatcher
-- JVP loss: u_tgt = (v - (t-r) * du/dt).detach(), loss = (u_pred - u_tgt)^2
+- JVP loss: V = u - (t-r) * du/dt.detach(), loss = (V - (e-naction))^2
 - Adaptive weighting with norm_p and norm_eps
 - MeanFlow EMA (periodic update) instead of diffusers EMAModel
 - noise_pred_net called directly with (timestep=t, stoptime=h)
@@ -138,7 +138,6 @@ def train(
             r = r.view(-1, 1, 1)
 
             z = (1 - t) * naction + t * e
-            v = e - naction
 
             # Direct reference to noise_pred_net for JVP
             noise_pred_net = model_unwrapped.noise_pred_net
@@ -151,7 +150,9 @@ def train(
                     stoptime=h.view(-1),
                     global_cond=obsgoal_cond,
                 )
-
+            
+            v=u_func(z, t, t)  # 
+            
             dtdt = torch.ones_like(t)
             drdt = torch.zeros_like(r)
 
@@ -160,9 +161,8 @@ def train(
                     u_func, (z, t, r), (v, dtdt, drdt)
                 )
 
-                u_tgt = (v - (t - r) * dudt).detach()
-
-                loss = (u_pred - u_tgt) ** 2
+                V=u_pred - (t - r) * (dudt.detach())
+                loss = (V-(e - naction)) ** 2
                 loss = loss.sum(dim=(1, 2))  # (B,) — squared L2
 
                 # Adaptive weighting
