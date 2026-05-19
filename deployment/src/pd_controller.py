@@ -63,8 +63,7 @@ def fit_bspline_waypoints(waypoints: np.ndarray, sample_multiplier: int = BSPLIN
 		u = np.concatenate(([0.0], np.cumsum(distances)))
 		if u[-1] < EPS:
 			return np.repeat(pts[:1], num_samples, axis=0)
-		u = u / u[-1]
-
+		u = u / u[-1]		#u[-1]是把每一步的distance模长加在一起
 		coords = [pts[:, dim] for dim in range(curve_dim)]
 		tck, _ = splprep(coords, u=u, s=0.0, k=k)
 		sample_u = np.linspace(0.0, 1.0, num_samples)
