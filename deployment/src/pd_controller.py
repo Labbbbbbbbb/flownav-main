@@ -160,17 +160,17 @@ def main():
 				continue
 			
 			# with no B-spline, directly compute delta_waypoint from raw waypoints
-			# delta_waypoint=get_delta(np.asarray(waypoints).reshape(1, -1, waypoints.shape[-1])).squeeze()	# 计算相邻waypoint之间的差值，得到每个waypoint相对于前一个waypoint的增量
-			# cur_waypoint_elasped_time = (rospy.get_time() - waypoint.last_time_received ) * 1000.0	#单位ms
-			# waypoint.current_waypoint_index= int(int(cur_waypoint_elasped_time //150))	#每200ms切换到下一个waypoint，待调整
+			delta_waypoint=get_delta(np.asarray(waypoints).reshape(1, -1, waypoints.shape[-1])).squeeze()	# 计算相邻waypoint之间的差值，得到每个waypoint相对于前一个waypoint的增量
+			cur_waypoint_elasped_time = (rospy.get_time() - waypoint.last_time_received ) * 1000.0	#单位ms
+			waypoint.current_waypoint_index= int(int(cur_waypoint_elasped_time //150))	#每200ms切换到下一个waypoint，待调整
 
 			
 			# B-spline
-			smoothed_waypoints = fit_bspline_waypoints(waypoints)
-			delta_waypoint = np.diff(smoothed_waypoints, axis=0, prepend=smoothed_waypoints[:1])
-			cur_waypoint_elasped_time = (rospy.get_time() - waypoint.last_time_received ) * 1000.0	#单位ms
-			sample_interval_ms = BASE_WAYPOINT_INTERVAL_MS * len(waypoints) / float(len(smoothed_waypoints))
-			waypoint.current_waypoint_index= int(cur_waypoint_elasped_time // sample_interval_ms)	# 按样条密采样后的时间步长切换
+			# smoothed_waypoints = fit_bspline_waypoints(waypoints)
+			# delta_waypoint = np.diff(smoothed_waypoints, axis=0, prepend=smoothed_waypoints[:1])
+			# cur_waypoint_elasped_time = (rospy.get_time() - waypoint.last_time_received ) * 1000.0	#单位ms
+			# sample_interval_ms = BASE_WAYPOINT_INTERVAL_MS * len(waypoints) / float(len(smoothed_waypoints))
+			# waypoint.current_waypoint_index= int(cur_waypoint_elasped_time // sample_interval_ms)	# 按样条密采样后的时间步长切换
    			
    
 			print("[DEBUG] cur_waypoint_elasped_time: {:.2f}ms, current_waypoint_index: {}".format(cur_waypoint_elasped_time, waypoint.current_waypoint_index))
@@ -187,8 +187,8 @@ def main():
 			print(f"publishing new vel: {v}, {w}")
 		vel_out.publish(vel_msg)
 		waypoint_msg = Float32MultiArray()
-		# waypoint_msg.data = waypoints.astype(np.float32).reshape(-1).tolist()
-		waypoint_msg.data = smoothed_waypoints.astype(np.float32).reshape(-1).tolist() # Bspline
+		waypoint_msg.data = waypoints.astype(np.float32).reshape(-1).tolist()
+		# waypoint_msg.data = smoothed_waypoints.astype(np.float32).reshape(-1).tolist() # Bspline
 		fitted_waypoint_pub.publish(waypoint_msg)
 		rate.sleep()
 	
