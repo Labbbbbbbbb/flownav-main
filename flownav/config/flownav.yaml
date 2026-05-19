@@ -77,9 +77,9 @@ image_size: [96, 96] # width, height
 
 datasets:
   #  recon:
-  #   data_folder: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/nomad_dataset/recon
-  #   train: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/data_splits/recon/train/ # path to train folder with traj_names.txt
-  #   test: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/data_splits/recon/test/ # path to test folder with traj_names.txt
+  #   data_folder:  /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/recon
+  #   train:  /media/zhanyt/ZY/Datasets/flownav_data/data_splits/recon/train/ # path to train folder with traj_names.txt
+  #   test:  /media/zhanyt/ZY/Datasets/flownav_data/data_splits/recon/test/ # path to test folder with traj_names.txt
   #   end_slack: 3 # because many trajectories end in collisions
   #   goals_per_obs: 1 # how many goals are sampled per observation
   #   negative_mining: True # negative mining from the ViNG paper (Shah et al.)
@@ -129,3 +129,4 @@ eval_freq: 1 # in epochs
 
 #load_run: /media/zhanyt/Data/Zytisworking/flownav-main/weights/flownav_weights.pth
 #load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/flownav/flownav_2026_04_11_13_17_02/4.pth
+load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/flownav/flownav_2026_05_19_20_30_00/latest.pth
