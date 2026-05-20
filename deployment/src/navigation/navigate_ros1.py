@@ -89,7 +89,7 @@ def callback_fitted(waypoint_msg: Float32MultiArray):
     data = np.asarray(waypoint_msg.data, dtype=np.float32)
     # Expect flattened trajectory: [x1,y1, x2,y2, ...] (or with extra heading values)
     if data.size == 0:
-        print("[CALLBACK] 收到空 waypoint 数据")
+        # print("[CALLBACK] 收到空 waypoint 数据")
         return
 
     # Try to reshape to Nx2 (prefer), fallback to Nx4 then take first 2 cols
@@ -115,7 +115,7 @@ def callback_fitted(waypoint_msg: Float32MultiArray):
         pts = pts[:N_TARGET]
 
     fitted_waypoints = pts.astype(np.float32)
-    print(f"[CALLBACK] 收到整条平滑 waypoint，点数={pts.shape[0]}, dtype={fitted_waypoints.dtype}")
+    # print(f"[CALLBACK] 收到整条平滑 waypoint，点数={pts.shape[0]}, dtype={fitted_waypoints.dtype}")
 
 @staticmethod
 def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
