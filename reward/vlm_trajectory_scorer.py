@@ -185,20 +185,11 @@ class VLMTrajectoryScorer:
         scores = None
         raw_output = None
         # scores = self._parse_scores(raw_output, len(trajectories))
-        # timings: render measured; encode/request/parse not measured unless request path enabled
-        timings = {
-            "render": float(t_render - t0),
-            "encode": None,
-            "request": None,
-            "parse": None,
-            "total": None,
-        }
-        print(f"[TIMINGS] render={timings['render']:.3f}s")
+        
         return {
             "scores": scores,
             "raw_output": raw_output,
             "annotated_image": annotated,
-            "timings": timings,
         }
 
     def _parse_scores(self, text, num_trajs):

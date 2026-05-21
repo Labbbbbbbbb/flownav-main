@@ -250,35 +250,35 @@ def main(args):
                 timeline["select_ms"] = (t_select_end - t_select_start) * 1000.0
 
                 # sampling / one-step MeanFlow
-                # t_sample_start = time.perf_counter()
-                # noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
-                # t = torch.ones(noisy_action.shape[0], device=device)
-                # h = torch.ones(noisy_action.shape[0], device=device)
-                # t_noise_start = time.perf_counter()
-                # u = model.noise_pred_net(sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond)
-                # t_noise_end = time.perf_counter()
-                # traj = noisy_action - u
-                # naction = to_numpy(get_action(traj))
-                # t_sample_end = time.perf_counter()
-                # timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
-                # timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
-
-                # sampleing / k-step MeanFlow
-                k_steps = 3
                 t_sample_start = time.perf_counter()
                 noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
+                t = torch.ones(noisy_action.shape[0], device=device)
+                h = torch.ones(noisy_action.shape[0], device=device)
                 t_noise_start = time.perf_counter()
-                u=noisy_action
-                for k in range(k_steps):
-                    t = torch.ones(noisy_action.shape[0], device=device) / k_steps * (k + 1)
-                    h = torch.ones(noisy_action.shape[0], device=device) / k_steps
-                    u = model.noise_pred_net(sample=u, timestep=t, stoptime=h, global_cond=obs_cond)
+                u = model.noise_pred_net(sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond)
                 t_noise_end = time.perf_counter()
                 traj = noisy_action - u
                 naction = to_numpy(get_action(traj))
                 t_sample_end = time.perf_counter()
                 timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
                 timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
+
+                # sampleing / k-step MeanFlow
+                # k_steps = 3
+                # t_sample_start = time.perf_counter()
+                # noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
+                # t_noise_start = time.perf_counter()
+                # u=noisy_action
+                # for k in range(k_steps):
+                #     t = torch.ones(noisy_action.shape[0], device=device) / k_steps * (k + 1)
+                #     h = torch.ones(noisy_action.shape[0], device=device) / k_steps
+                #     u = model.noise_pred_net(sample=u, timestep=t, stoptime=h, global_cond=obs_cond)
+                # t_noise_end = time.perf_counter()
+                # traj = noisy_action - u
+                # naction = to_numpy(get_action(traj))
+                # t_sample_end = time.perf_counter()
+                # timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
+                # timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
 
 
 
