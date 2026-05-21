@@ -86,18 +86,18 @@ meanflow:
 # dataset specific parameters
 image_size: [96, 96]
 datasets:
-  #  recon:
-  #   data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/recon
-  #   train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/recon/train/ # path to train folder with traj_names.txt
-  #   test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/recon/test/ # path to test folder with traj_names.txt
-  #   end_slack: 3 # because many trajectories end in collisions
-  #   goals_per_obs: 1 # how many goals are sampled per observation
-  #   negative_mining: True # negative mining from the ViNG paper (Shah et al.)
-  #   waypoint_spacing: 1
+   recon:
+    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/recon
+    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/recon/train/ # path to train folder with traj_names.txt
+    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/recon/test/ # path to test folder with traj_names.txt
+    end_slack: 3 # because many trajectories end in collisions
+    goals_per_obs: 1 # how many goals are sampled per observation
+    negative_mining: True # negative mining from the ViNG paper (Shah et al.)
+    waypoint_spacing: 1
    custom:
-    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/custom_4_29_lab
-    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29_lab/train/ # path to train folder with traj_names.txt
-    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29_lab/test/ # path to test folder with traj_names.txt
+    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/custom_4_29
+    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29/train/ # path to train folder with traj_names.txt
+    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29/test/ # path to test folder with traj_names.txt
     end_slack: 3
     goals_per_obs: 2 # increase dataset size
     negative_mining: True
@@ -146,4 +146,5 @@ eval_freq: 1
 # load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_17_21_26_18/latest.pth #iMF,在05_17_19_12_25的基础上在lab数据训练了一整轮
 
 #load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_17_22_01_55/1.pth #stats=5iMF
-load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_18_19_45_28/latest.pth #在05_17_22_01_55的基础上又在lab数据训练了一整轮,并且把action_stats改成了[-2.5, -4]和[5, 4]
+# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_18_19_45_28/latest.pth #在05_17_22_01_55的基础上又在lab数据训练了一整轮,并且把action_stats改成了[-2.5, -4]和[5, 4]
+# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_20_10_24_38/latest.pth #stats=5iMF,base
