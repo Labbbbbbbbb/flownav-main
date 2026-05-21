@@ -106,6 +106,8 @@ def train(
 
             # Get naction and normalize it
             deltas = get_delta(actions)
+            #在这里之前加上打印功能查看deltas的值，看看归一化数值是否合理
+            # print(f"Deltas: {deltas}")
             ndeltas = normalize_data(deltas, ACTION_STATS)
             naction = from_numpy(ndeltas).to(device)
 
