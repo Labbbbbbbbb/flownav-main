@@ -37,6 +37,11 @@ from reward.vlm_trajectory_scorer import VLMTrajectoryScorer
 TOPOMAP_IMAGES_DIR = "../../topomaps/images"
 ROBOT_CONFIG_PATH = "../../config/robot.yaml"
 MODEL_CONFIG_PATH = "../../config/models.yaml"
+DEBUG_RAW_TRAJ = os.getenv("DEBUG_RAW_TRAJ", "0") == "1"
+DEBUG_RAW_TRAJ_DIR = os.getenv(
+    "DEBUG_RAW_TRAJ_DIR",
+    str(Path(__file__).resolve().parents[3] / "logs" / "raw_traj_debug"),
+)
 
 # 加载机器人基本配置
 with open(ROBOT_CONFIG_PATH, "r") as f:
@@ -67,6 +72,95 @@ def tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> np.ndarray:
     image_tensor = image_tensor[:3] * std + mean
     image_tensor = torch.clamp(image_tensor, 0.0, 1.0)
     return (image_tensor.permute(1, 2, 0).detach().cpu().numpy() * 255.0).astype(np.uint8)
+
+
+def debug_dump_raw_trajectories(raw_trajs, debug_dir, tag="traj", max_trajs=6):
+    """Dump raw trajectory predictions before any pixel projection.
+
+    This helper is meant to inspect the model output in its native coordinate
+    space, before it is scaled, flipped, or passed into the VLM scorer. It is
+    useful when trajectories look visually incorrect after projection, because
+    it lets you answer a more basic question first: did the model already
+    predict a bad trajectory, or did the projection / scaling step distort it?
+
+    Args:
+        raw_trajs: A numpy array-like object containing one or more trajectories.
+            Supported shapes are typically:
+            - (T, 2): a single trajectory with T waypoints
+            - (N, T, 2): N trajectories, each with T waypoints
+            The function also tolerates extra trailing dimensions as long as the
+            last dimension contains at least x/y coordinates.
+        debug_dir: Directory where the debug image will be written. The directory
+            is created automatically if it does not exist.
+        tag: Short label used in the filename and plot title so you can associate
+            the dump with a specific timestep, rollout, or experiment.
+        max_trajs: Maximum number of trajectories to draw in the same figure.
+            This keeps the plot readable when many samples are produced.
+
+    Behavior:
+        - Converts the input to a numpy array and normalizes 2D inputs to a batch
+          of size 1.
+        - Prints basic statistics to stdout, including shape, dtype, min/max,
+          and the fraction of finite values.
+        - Saves a matplotlib figure showing each trajectory in x-y space with
+          markers at waypoints and a small index label near the first point.
+
+    Output:
+        A PNG file named like "{tag}_{timestamp}.png" under debug_dir.
+    """
+    raw_trajs = np.asarray(raw_trajs)
+    if raw_trajs.ndim == 2:
+        raw_trajs = raw_trajs[None, ...]
+
+    finite_mask = np.isfinite(raw_trajs)
+    finite_ratio = float(finite_mask.mean()) if raw_trajs.size else 0.0
+    raw_min = float(np.nanmin(raw_trajs)) if raw_trajs.size else float("nan")
+    raw_max = float(np.nanmax(raw_trajs)) if raw_trajs.size else float("nan")
+    print(
+        f"[TRAJ DEBUG] {tag}: shape={raw_trajs.shape}, dtype={raw_trajs.dtype}, "
+        f"min={raw_min:.4f}, max={raw_max:.4f}, finite_ratio={finite_ratio:.4f}"
+    )
+
+    debug_dir = Path(debug_dir)
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    save_path = debug_dir / f"{tag}_{stamp}.png"
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    colors = plt.cm.tab10(np.linspace(0, 1, min(len(raw_trajs), max_trajs)))
+    for idx, traj in enumerate(raw_trajs[:max_trajs]):
+        if traj.shape[-1] < 2:
+            continue
+        traj_xy = np.asarray(traj[:, :2], dtype=np.float32)
+        ax.plot(
+            traj_xy[:, 0],
+            traj_xy[:, 1],
+            marker="o",
+            markersize=3,
+            linewidth=1.5,
+            color=colors[idx],
+            label=f"traj {idx}",
+        )
+        ax.text(traj_xy[0, 0], traj_xy[0, 1], str(idx), fontsize=8, color=colors[idx])
+
+    ax.axhline(0.0, color="gray", linewidth=0.8, alpha=0.5)
+    ax.axvline(0.0, color="gray", linewidth=0.8, alpha=0.5)
+    ax.set_title(f"Raw trajectories before projection ({tag})")
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_aspect("equal", adjustable="box")
+    ax.grid(True, alpha=0.3)
+    if len(raw_trajs) <= max_trajs:
+        ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=160)
+    plt.close(fig)
+    print(f"[TRAJ DEBUG] saved raw trajectory plot to: {save_path}")
 
 
 
@@ -264,17 +358,20 @@ def main(args):
                 # timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
 
                 # sampleing / k-step MeanFlow
-                k_steps = 3
+                k_steps = max(1, int(args.k_steps))
                 t_sample_start = time.perf_counter()
                 noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
                 t_noise_start = time.perf_counter()
-                u=noisy_action
+                x = noisy_action
+                dt = 1.0 / float(k_steps)
                 for k in range(k_steps):
-                    t = torch.ones(noisy_action.shape[0], device=device) / k_steps * (k + 1)
-                    h = torch.ones(noisy_action.shape[0], device=device) / k_steps
-                    u = model.noise_pred_net(sample=u, timestep=t, stoptime=h, global_cond=obs_cond)
+                    t = torch.full((x.shape[0],), 1.0 - float(k) * dt, device=device)
+                    h = torch.full((x.shape[0],), dt, device=device)
+                    u = model.noise_pred_net(sample=x, timestep=t, stoptime=h, global_cond=obs_cond)
+                    # Treat the network output as the learned displacement over the current interval.
+                    x = x - u
                 t_noise_end = time.perf_counter()
-                traj = noisy_action - u
+                traj = x
                 naction = to_numpy(get_action(traj))
                 t_sample_end = time.perf_counter()
                 timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
@@ -304,6 +401,13 @@ def main(args):
                 projected_total_traj[..., 0] = 96.0 - projected_total_traj[..., 0]
                 t_proj_end = time.perf_counter()
                 timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
+
+                if DEBUG_RAW_TRAJ:
+                    debug_dump_raw_trajectories(
+                        naction,
+                        DEBUG_RAW_TRAJ_DIR,
+                        tag=f"step_{time.strftime('%Y%m%d_%H%M%S')}",
+                    )
 
                 # VLM scoring (may be local or remote) -- measure end-to-end call
                 t_vlm_start = time.perf_counter()
@@ -401,7 +505,7 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt", required=True, type=str, help="模型权重路径 (.pth)")
     parser.add_argument("--dir", "-d", required=True, type=str, help="拓扑图目录名")
     parser.add_argument("--waypoint", "-w", default=2, type=int)
-    parser.add_argument("--k_steps", "-k", default=10, type=int, help="ODE 求解步数")
+    parser.add_argument("--k_steps", "-k", default=3, type=int, help="ODE 求解步数")
     parser.add_argument("--radius", "-r", default=4, type=int) #原来是4
     parser.add_argument("--close_threshold", "-t", default=3, type=int)
     parser.add_argument("--goal-node", "-g", default=-1, type=int)

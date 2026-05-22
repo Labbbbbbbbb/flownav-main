@@ -15,11 +15,15 @@ recon:
 scand:
   metric_waypoint_spacing: 0.38
 
-tartan_drive:
+tartan:
   metric_waypoint_spacing: 0.72
 
 go_stanford:
   metric_waypoint_spacing: 0.12
 
 custom:
-  metric_waypoint_spacing: 0.1 #相邻帧之间的距离，单位为米 0.2/15=0.014
+  # metric_waypoint_spacing: 0.03 #相邻帧之间的距离，单位为米 0.2/15=0.014
+  metric_waypoint_spacing: 0.014 #相邻帧之间的距离，单位为米 0.2/15=0.014
+
+huron:
+  metric_waypoint_spacing: 0.2

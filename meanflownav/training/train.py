@@ -101,6 +101,7 @@ def train(
 
             # Get naction and normalize it
             deltas = get_delta(actions)
+            print(f"[debug] deltas shape: {deltas.shape}, min: {deltas.min().item():.4f}, max: {deltas.max().item():.4f}, mean: {deltas.mean().item():.4f}, std: {deltas.std().item():.4f}")
             ndeltas = normalize_data(deltas, ACTION_STATS)
             naction = from_numpy(ndeltas).to(device)
 
