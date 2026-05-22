@@ -57,3 +57,7 @@ roslaunch ouster_ros sensor.launch
 cd /home/zyt/Ouster_DLIO/lidar
 source devel/setup.zsh
 roslaunch direct_lidar_inertial_odometry dlio.launch
+
+cd /home/zyt/MMChassis/joy_ctrl_ws
+source devel/setup.zsh
+roslaunch joy_ctrl joy_turtle.launch

@@ -183,7 +183,7 @@ def callback_fitted(waypoint_msg: Float32MultiArray):
     data = np.asarray(waypoint_msg.data, dtype=np.float32)
     # Expect flattened trajectory: [x1,y1, x2,y2, ...] (or with extra heading values)
     if data.size == 0:
-        print("[CALLBACK] 收到空 waypoint 数据")
+        # print("[CALLBACK] 收到空 waypoint 数据")
         return
 
     # Try to reshape to Nx2 (prefer), fallback to Nx4 then take first 2 cols
@@ -209,7 +209,7 @@ def callback_fitted(waypoint_msg: Float32MultiArray):
         pts = pts[:N_TARGET]
 
     fitted_waypoints = pts.astype(np.float32)
-    print(f"[CALLBACK] 收到整条平滑 waypoint，点数={pts.shape[0]}, dtype={fitted_waypoints.dtype}")
+    # print(f"[CALLBACK] 收到整条平滑 waypoint，点数={pts.shape[0]}, dtype={fitted_waypoints.dtype}")
 
 @staticmethod
 def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
@@ -361,6 +361,8 @@ def main(args):
                 k_steps = max(1, int(args.k_steps))
                 t_sample_start = time.perf_counter()
                 noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
+                t = torch.ones(noisy_action.shape[0], device=device)
+                h = torch.ones(noisy_action.shape[0], device=device)
                 t_noise_start = time.perf_counter()
                 x = noisy_action
                 dt = 1.0 / float(k_steps)
@@ -376,6 +378,23 @@ def main(args):
                 t_sample_end = time.perf_counter()
                 timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
                 timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
+
+                # sampleing / k-step MeanFlow
+                # k_steps = 3
+                # t_sample_start = time.perf_counter()
+                # noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
+                # t_noise_start = time.perf_counter()
+                # u=noisy_action
+                # for k in range(k_steps):
+                #     t = torch.ones(noisy_action.shape[0], device=device) / k_steps * (k + 1)
+                #     h = torch.ones(noisy_action.shape[0], device=device) / k_steps
+                #     u = model.noise_pred_net(sample=u, timestep=t, stoptime=h, global_cond=obs_cond)
+                # t_noise_end = time.perf_counter()
+                # traj = noisy_action - u
+                # naction = to_numpy(get_action(traj))
+                # t_sample_end = time.perf_counter()
+                # timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
+                # timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
 
 
 
