@@ -102,22 +102,14 @@ datasets:
     goals_per_obs: 2 # increase dataset size
     negative_mining: True
     waypoint_spacing: 1
-  #  custom:
-  #   data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/custom_4_29_hallway
-  #   train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29_hallway/train/ # path to train folder with traj_names.txt
-  #   test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29_hallway/test/ # path to test folder with traj_names.txt
-  #   end_slack: 3
-  #   goals_per_obs: 2 # increase dataset size
-  #   negative_mining: True
-  #   waypoint_spacing: 1
-  # tartan:
-  #   data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/tartan
-  #   train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/tartan/train/ # path to train folder with traj_names.txt
-  #   test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/tartan/test/ # path to test folder with traj_names.txt
-  #   end_slack: 3
-  #   goals_per_obs: 1 # increase dataset size
-  #   negative_mining: True
-  #   waypoint_spacing: 1
+   custom_05_23:
+    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/custom_05_23
+    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_05_23/train/ # path to train folder with traj_names.txt
+    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_05_23/test/ # path to test folder with traj_names.txt
+    end_slack: 3
+    goals_per_obs: 2 # increase dataset size
+    negative_mining: True
+    waypoint_spacing: 1
    huron:
     data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/huron
     train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/huron/train/ # path to train folder with traj_names.txt

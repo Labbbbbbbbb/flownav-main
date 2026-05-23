@@ -27,3 +27,6 @@ custom:
 
 huron:
   metric_waypoint_spacing: 0.2
+
+custom_05_23:
+  metric_waypoint_spacing: 0.05 
