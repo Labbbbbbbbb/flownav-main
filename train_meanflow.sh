@@ -4,7 +4,7 @@
 # ---- Config ----
 CONDA_ENV="flownav"
 CONFIG="meanflownav/config/meanflownav.yaml"
-GPU_ID=0
+GPU_ID="${1:-0}"
 
 # ---- Activate environment ----
 # eval "$(conda shell.bash hook)"
