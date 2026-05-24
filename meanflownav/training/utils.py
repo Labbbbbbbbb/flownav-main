@@ -482,8 +482,8 @@ def visualize_action_distribution(
     stage_ratios = np.array([0.0, 1.0], dtype=np.float32)   # 仅可视化初始高斯动作（t=0）和最终 MeanFlow 动作（t=1），中间阶段不绘制,以突出对比,如果是多NFES，这里应有中间分段
     gc_action_stages_list = [[] for _ in stage_ratios]
 
-    Trajprojector = TrajectoryProjector(dataset_name="deploy",image_size=(160,120))
-    Scorer = VLMTrajectoryScorer()
+    #Trajprojector = TrajectoryProjector(dataset_name="deploy",image_size=(160,120))
+    #Scorer = VLMTrajectoryScorer()
 
     # 遍历各子块，调用 model_output 进行推理
     for obs, goal in zip(batch_obs_images_list, batch_goal_images_list):
@@ -553,25 +553,25 @@ def visualize_action_distribution(
             axis=0,
         )
         ##使用VLM评估分数
-        projected_traj = Trajprojector.project_points(gc_actions)  #shape=(num_samples，T，2)的uv坐标
+        #projected_traj = Trajprojector.project_points(gc_actions)  #shape=(num_samples，T，2)的uv坐标
         # print(f"[DEBUG] projected_traj shape: {projected_traj.shape}, min={projected_traj.min()}, max={projected_traj.max()}")
         # 将 CHW tensor 转为 (H, W, 3)
-        obs_image = batch_viz_obs_images[i].detach().cpu().permute(1, 2, 0).numpy()
+        # obs_image = batch_viz_obs_images[i].detach().cpu().permute(1, 2, 0).numpy()
         # print(f"[DEBUG] obs_image shape: {obs_image.shape}, dtype: {obs_image.dtype}, min={obs_image.min()}, max={obs_image.max()}")
-        if obs_image.dtype != np.uint8:
-            scale = 255.0 if np.issubdtype(obs_image.dtype, np.floating) and obs_image.max() <= 1.0 else 1.0
-            obs_image = np.clip(obs_image * scale, 0, 255).astype(np.uint8)
+        # if obs_image.dtype != np.uint8:
+        #     scale = 255.0 if np.issubdtype(obs_image.dtype, np.floating) and obs_image.max() <= 1.0 else 1.0
+        #     obs_image = np.clip(obs_image * scale, 0, 255).astype(np.uint8)
         # print(f"[DEBUG] obs_image after conversion: dtype={obs_image.dtype}, min={obs_image.min()}, max={obs_image.max()}")
         
-        projected_traj = projected_traj * np.array([160.0/640.0, 120.0/480.0])
-        projected_traj[..., 0] = 160.0 - projected_traj[..., 0]
+        # projected_traj = projected_traj * np.array([160.0/640.0, 120.0/480.0])
+        # projected_traj[..., 0] = 160.0 - projected_traj[..., 0]
 
-        score_result = Scorer.score(obs_image, projected_traj)
-        scores = score_result["scores"]  # scores shape=(num_samples,)
-        annotated_image = score_result["annotated_image"]
+        # score_result = Scorer.score(obs_image, projected_traj)
+        # scores = score_result["scores"]  # scores shape=(num_samples,)
+        # annotated_image = score_result["annotated_image"]
         # print(f"[DEBUG] annotated_image shape: {annotated_image.shape}, dtype: {annotated_image.dtype}, min={annotated_image.min()}, max={annotated_image.max()}")
         # best_idx = int(np.argmax(scores))
-        annotated_np = np.array(annotated_image)
+        # annotated_np = np.array(annotated_image)
         # 临时保存来验证
         # import tempfile
         # with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=visualize_path) as tmp:
@@ -647,12 +647,12 @@ def visualize_action_distribution(
         #     )
         ax[0].legend(bbox_to_anchor=(0.0, -0.5), loc="upper left", ncol=2)
         # 将观测和目标图像从 (C, H, W) 转为 (H, W, C)，imshow 需要 channel-last 格式
-        #obs_image = to_numpy(batch_viz_obs_images[i])
+        obs_image = to_numpy(batch_viz_obs_images[i])
         goal_image = to_numpy(batch_viz_goal_images[i])
-        #obs_image = np.moveaxis(obs_image, 0, -1)   # (C,H,W) → (H,W,C)
+        obs_image = np.moveaxis(obs_image, 0, -1)   # (C,H,W) → (H,W,C)
         goal_image = np.moveaxis(goal_image, 0, -1) # (C,H,W) → (H,W,C)
-        # ax[2].imshow(obs_image)   # 第三列：当前观测帧
-        ax[2].imshow(annotated_np)   # 第三列：当前观测帧
+        ax[2].imshow(obs_image)   # 第三列：当前观测帧
+        # ax[2].imshow(annotated_np)   # 第三列：当前观测帧
         
         ax[3].imshow(goal_image)  # 第四列：目标图像
         ax[0].set_title("gaussian->final stages")

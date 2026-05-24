@@ -101,6 +101,7 @@ def train(
 
             # Get naction and normalize it
             deltas = get_delta(actions)
+            print(f"[debug] deltas shape: {deltas.shape}, min: {deltas.min().item():.4f}, max: {deltas.max().item():.4f}, mean: {deltas.mean().item():.4f}, std: {deltas.std().item():.4f}")
             ndeltas = normalize_data(deltas, ACTION_STATS)
             naction = from_numpy(ndeltas).to(device)
 
@@ -150,8 +151,14 @@ def train(
                     stoptime=h.view(-1),
                     global_cond=obsgoal_cond,
                 )
-            
-            v=u_func(z, t, t)  # 
+            v_pred = noise_pred_net.forward_v(z, t.view(-1), global_cond=obsgoal_cond)
+            with torch.amp.autocast("cuda", enabled=False):
+                aux_loss = (v_pred - (e - naction)) ** 2
+                aux_loss = aux_loss.sum(dim=(1, 2))
+                aux_adp_wt = (aux_loss.detach() + meanflow_args.norm_eps) ** meanflow_args.norm_p
+                aux_flow_loss = (aux_loss / aux_adp_wt * action_mask).mean() / (action_mask.mean() + 1e-2)
+
+            v = v_pred.detach()
             
             dtdt = torch.ones_like(t)
             drdt = torch.zeros_like(r)
@@ -177,7 +184,7 @@ def train(
                 )
 
             # Total loss
-            total_loss = alpha * dist_loss + (1 - alpha) * flow_loss
+            total_loss = alpha * dist_loss + (1 - alpha) * (flow_loss + aux_flow_loss)
 
             # Optimize
             optimizer.zero_grad()

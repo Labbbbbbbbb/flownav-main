@@ -52,7 +52,6 @@ def main(config: dict) -> None:
     device = torch.device(
         f"cuda:{first_gpu_id}" if torch.cuda.is_available() else "cpu"
     )
-
     # Set seed
     if "seed" in config:
         np.random.seed(config["seed"])
@@ -150,6 +149,7 @@ def main(config: dict) -> None:
         global_cond_dim=config["encoding_size"],
         down_dims=config["down_dims"],
         cond_predict_scale=config["cond_predict_scale"],
+        use_v_head=True,   # ← 加这个
     )
 
     dist_pred_network = DenseNetwork(embedding_dim=config["encoding_size"])
@@ -196,7 +196,7 @@ def main(config: dict) -> None:
             latest_path = None
 
         if latest_path:
-            latest_checkpoint = torch.load(latest_path, map_location=device)
+            latest_checkpoint = torch.load(latest_path, map_location=lambda storage, loc: storage.cuda(0))
             if "model" in latest_checkpoint:
                 model.load_state_dict(latest_checkpoint["model"], strict=False)
             else:
@@ -205,7 +205,7 @@ def main(config: dict) -> None:
                 current_epoch = latest_checkpoint["epoch"] + 1
 
     # Load Depth-Anything pre-trained weights
-    checkpoint = torch.load(config["depth"]["weights_path"], map_location=device)
+    checkpoint = torch.load(config["depth"]["weights_path"], map_location=lambda storage, loc: storage.cuda(0))
     saved_state_dict = (
         checkpoint["state_dict"] if "state_dict" in checkpoint else checkpoint
     )

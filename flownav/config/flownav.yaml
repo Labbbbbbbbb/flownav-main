@@ -11,7 +11,7 @@ p_std: 1.0 # std for normalizing the action space added by zyt
 batch_size: 64    #爆显存了，原来两个batch size都是512
 eval_batch_size: 64 
 epochs: 30
-gpu_ids: [0]
+gpu_ids: [1]
 num_workers: 8
 lr: 1e-4
 optimizer: adamw
@@ -47,7 +47,7 @@ depth:
   pool_dim: 64
   out_dim: 
     vits: 384
-  weights_path: /media/zhanyt/Data/Zytisworking/flownav-main/weights/depth_anything_v2_vits.pth
+  weights_path: /data/flownav_dataset/pretrain_weights/depth_anything_v2_vits.pth
 
 # mask 
 goal_mask_prob: 0.5
@@ -74,49 +74,39 @@ learn_angle: False
 
 # dataset specific parameters
 image_size: [96, 96] # width, height
-
 datasets:
   #  recon:
-  #   data_folder: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/nomad_dataset/recon
-  #   train: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/data_splits/recon/train/ # path to train folder with traj_names.txt
-  #   test: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/data_splits/recon/test/ # path to test folder with traj_names.txt
+  #   data_folder: /data/flownav_dataset/datasets/recon
+  #   train: /data/flownav_dataset/data_splits/recon/train/ # path to train folder with traj_names.txt
+  #   test: /data/flownav_dataset/data_splits/recon/test/ # path to test folder with traj_names.txt
   #   end_slack: 3 # because many trajectories end in collisions
   #   goals_per_obs: 1 # how many goals are sampled per observation
   #   negative_mining: True # negative mining from the ViNG paper (Shah et al.)
   #   waypoint_spacing: 1
-   custom:
-    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/custom_4_29_lab
-    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29_lab/train/ # path to train folder with traj_names.txt
-    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29_lab/test/ # path to test folder with traj_names.txt
+  #  custom:
+  #   data_folder: /data/flownav_dataset/datasets/custom_4_29
+  #   train: /data/flownav_dataset/data_splits/custom_4_29/train/ # path to train folder with traj_names.txt
+  #   test: /data/flownav_dataset/data_splits/custom_4_29/test/ # path to test folder with traj_names.txt
+  #   end_slack: 3
+  #   goals_per_obs: 2 # increase dataset size
+  #   negative_mining: True
+  #   waypoint_spacing: 1
+   custom_05_23:
+    data_folder: /data/flownav_dataset/datasets/custom_05_23
+    train: /data/flownav_dataset/data_splits/custom_05_23/train/ # path to train folder with traj_names.txt
+    test: /data/flownav_dataset/data_splits/custom_05_23/test/ # path to test folder with traj_names.txt
     end_slack: 3
     goals_per_obs: 2 # increase dataset size
     negative_mining: True
     waypoint_spacing: 1
-#   cory_hall:
-#     data_folder: /home/<username>/nomad_dataset/cory_hall/
-#     train: /home/<username>/data_splits/cory_hall/train/
-#     test: /home/<username>/data_splits/cory_hall/test/
-#     end_slack: 3 # because many trajectories end in collisions
-#     goals_per_obs: 1
-#     negative_mining: True
-#     waypoint_spacing: 1
-#   tartan_drive:
-#     data_folder: /home/<username>/nomad_dataset/tartan_drive/
-#     train: /home/<username>/data_splits/tartan_drive/train/
-#     test: /home/<username>/data_splits/tartan_drive/test/
-#     end_slack: 3 # because many trajectories end in collisions
-#     goals_per_obs: 1
-#     negative_mining: True
-#     waypoint_spacing: 1
-#   sacson:
-#     data_folder: /home/<username>/nomad_dataset/sacson/
-#     train: /home/<username>/data_splits/sacson/train/
-#     test: /home/<username>/data_splits/sacson/test/
-#     end_slack: 3 # because many trajectories end in collisions
-#     goals_per_obs: 1
-#     negative_mining: True
-#     waypoint_spacing: 1
-
+  #  huron:
+  #   data_folder: /data/flownav_dataset/datasets/huron
+  #   train: /data/flownav_dataset/data_splits/huron/train/ # path to train folder with traj_names.txt
+  #   test: /data/flownav_dataset/data_splits/huron/test/ # path to test folder with traj_names.txt
+  #   end_slack: 3
+  #   goals_per_obs: 1 # increase dataset size
+  #   negative_mining: True
+  #   waypoint_spacing: 1
 # logging stuff
 ## =0 turns off
 print_log_freq: 500 # in iterations
@@ -129,3 +119,5 @@ eval_freq: 1 # in epochs
 
 #load_run: /media/zhanyt/Data/Zytisworking/flownav-main/weights/flownav_weights.pth
 #load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/flownav/flownav_2026_04_11_13_17_02/4.pth
+# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/flownav/flownav_2026_05_19_20_30_00/latest.pth
+load_run: /home/zyt/flownav-main/logs/flownav/flownav_2026_05_24_14_36_11/1.pth

@@ -179,7 +179,7 @@ def main(config: dict) -> None:
                     fg="red",
                 )
             )
-        latest_checkpoint = torch.load(latest_path)
+        latest_checkpoint = torch.load(latest_path,map_location=lambda storage, loc: storage.cuda(0))
         if "model" in latest_checkpoint:
             model.load_state_dict(latest_checkpoint["model"], strict=True)
         else:
@@ -194,7 +194,7 @@ def main(config: dict) -> None:
     # Load Depth-Anything pre-trained weights
     checkpoint = torch.load(
         config["depth"]["weights_path"],
-        map_location=device,
+        map_location=lambda storage, loc: storage.cuda(0),
     )
     saved_state_dict = (
         checkpoint["state_dict"] if "state_dict" in checkpoint else checkpoint

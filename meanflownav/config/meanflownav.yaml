@@ -8,7 +8,7 @@ train: True
 batch_size: 64
 eval_batch_size: 64
 epochs: 30
-gpu_ids: [0]
+gpu_ids: [1]
 num_workers: 8
 lr: 1e-4
 optimizer: adamw
@@ -56,7 +56,7 @@ normalize: True
 # context
 context_type: temporal
 context_size: 3
-alpha: 1e-4
+alpha: 2e-4
 
 # distance bounds
 distance:
@@ -102,7 +102,7 @@ datasets:
     goals_per_obs: 2 # increase dataset size
     negative_mining: True
     waypoint_spacing: 1
-   custom:
+   custom_05_23:
     data_folder: /data/flownav_dataset/datasets/custom_05_23
     train: /data/flownav_dataset/data_splits/custom_05_23/train/ # path to train folder with traj_names.txt
     test: /data/flownav_dataset/data_splits/custom_05_23/test/ # path to test folder with traj_names.txt
@@ -148,3 +148,4 @@ eval_freq: 1
 # load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_21_11_45_23/latest.pth #waypoint_spacing从1改为0.25重新训练到了epoch4  *
 # load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_21_15_52_50/latest.pth #在上面的基础上又训练了一轮
 # load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_21_16_38_30/latest.pth # waypoint_spacing从1改为0.25 两个epoch
+# load_run: /home/zyt/flownav-main/logs/flownav/flownav_2026_05_24_14_36_11/1.pth

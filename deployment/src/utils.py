@@ -45,6 +45,7 @@ def load_model(
         global_cond_dim=config["encoding_size"],
         down_dims=config["down_dims"],
         cond_predict_scale=config["cond_predict_scale"],
+        use_v_head=True,   # ← 加这个
     )
     
     # 3. 实例化距离预测网络
