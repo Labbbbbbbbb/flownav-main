@@ -135,63 +135,76 @@ def main():
 	rate = rospy.Rate(RATE)
 
 	print("[*] PD Controller 就绪。等待 waypoint 序列...")
+	try:
+		while not rospy.is_shutdown():
+			vel_msg = Twist()
+			if reached_goal:
+				vel_out.publish(vel_msg)
+				print("Reached goal! Stopping...")
+				return
+			elif waypoint.is_valid(verbose=True):
+				data = waypoint.get()		#data是一个列表，包含了queue_size个waypoint点，每个点是一个numpy数组，形状为(2,)或(4,)
+				if data is None:
+					vel_out.publish(vel_msg)
+					waypoints=np.zeros((8, 2))
+					continue
+				# parse flattened trajectory into Nx2 or Nx4
+				n = len(data)
+				print(f"Received waypoint data length: {n}, data: {data}")
+				if n >= 2 and n % 2 == 0:
+					waypoints = np.array(data).reshape(-1, 2)
+				else:
+					print(f"[WARN] 无法解析收到的 waypoint 数据，长度为 {n}")
+					waypoints=np.zeros((8, 2))
+					vel_out.publish(vel_msg)
+					continue
+				
+				# with no B-spline, directly compute delta_waypoint from raw waypoints
+				delta_waypoint=get_delta(np.asarray(waypoints).reshape(1, -1, waypoints.shape[-1])).squeeze()	# 计算相邻waypoint之间的差值，得到每个waypoint相对于前一个waypoint的增量
+				cur_waypoint_elasped_time = (rospy.get_time() - waypoint.last_time_received ) * 1000.0	#单位ms
+				waypoint.current_waypoint_index= int(int(cur_waypoint_elasped_time //150))	#每200ms切换到下一个waypoint，待调整
 
-	while not rospy.is_shutdown():
-		vel_msg = Twist()
-		if reached_goal:
+				
+				# B-spline
+				# smoothed_waypoints = fit_bspline_waypoints(waypoints)
+				# delta_waypoint = np.diff(smoothed_waypoints, axis=0, prepend=smoothed_waypoints[:1])
+				# cur_waypoint_elasped_time = (rospy.get_time() - waypoint.last_time_received ) * 1000.0	#单位ms
+				# sample_interval_ms = BASE_WAYPOINT_INTERVAL_MS * len(waypoints) / float(len(smoothed_waypoints))
+				# waypoint.current_waypoint_index= int(cur_waypoint_elasped_time // sample_interval_ms)	# 按样条密采样后的时间步长切换
+				
+	
+				print("[DEBUG] cur_waypoint_elasped_time: {:.2f}ms, current_waypoint_index: {}".format(cur_waypoint_elasped_time, waypoint.current_waypoint_index))
+				waypoint.current_waypoint_index=min(waypoint.current_waypoint_index, len(delta_waypoint) - 1)
+				current_wp = delta_waypoint[waypoint.current_waypoint_index]
+
+				print(f"Current idx={waypoint.current_waypoint_index},elasped={cur_waypoint_elasped_time:.2f}ms , current_wp={current_wp}")
+				
+				v, w = pd_controller(current_wp)
+				if reverse_mode:
+					v *= -1
+				vel_msg.linear.x = v
+				vel_msg.angular.z = w
+				print(f"publishing new vel: {v}, {w}")
 			vel_out.publish(vel_msg)
-			print("Reached goal! Stopping...")
-			return
-		elif waypoint.is_valid(verbose=True):
-			data = waypoint.get()		#data是一个列表，包含了queue_size个waypoint点，每个点是一个numpy数组，形状为(2,)或(4,)
-			if data is None:
-				vel_out.publish(vel_msg)
-				waypoints=np.zeros((8, 2))
-				continue
-			# parse flattened trajectory into Nx2 or Nx4
-			n = len(data)
-			print(f"Received waypoint data length: {n}, data: {data}")
-			if n >= 2 and n % 2 == 0:
-				waypoints = np.array(data).reshape(-1, 2)
-			else:
-				print(f"[WARN] 无法解析收到的 waypoint 数据，长度为 {n}")
-				waypoints=np.zeros((8, 2))
-				vel_out.publish(vel_msg)
-				continue
-			
-			# with no B-spline, directly compute delta_waypoint from raw waypoints
-			delta_waypoint=get_delta(np.asarray(waypoints).reshape(1, -1, waypoints.shape[-1])).squeeze()	# 计算相邻waypoint之间的差值，得到每个waypoint相对于前一个waypoint的增量
-			cur_waypoint_elasped_time = (rospy.get_time() - waypoint.last_time_received ) * 1000.0	#单位ms
-			waypoint.current_waypoint_index= int(int(cur_waypoint_elasped_time //150))	#每200ms切换到下一个waypoint，待调整
-
-			
-			# B-spline
-			# smoothed_waypoints = fit_bspline_waypoints(waypoints)
-			# delta_waypoint = np.diff(smoothed_waypoints, axis=0, prepend=smoothed_waypoints[:1])
-			# cur_waypoint_elasped_time = (rospy.get_time() - waypoint.last_time_received ) * 1000.0	#单位ms
-			# sample_interval_ms = BASE_WAYPOINT_INTERVAL_MS * len(waypoints) / float(len(smoothed_waypoints))
-			# waypoint.current_waypoint_index= int(cur_waypoint_elasped_time // sample_interval_ms)	# 按样条密采样后的时间步长切换
-   			
-   
-			print("[DEBUG] cur_waypoint_elasped_time: {:.2f}ms, current_waypoint_index: {}".format(cur_waypoint_elasped_time, waypoint.current_waypoint_index))
-			waypoint.current_waypoint_index=min(waypoint.current_waypoint_index, len(delta_waypoint) - 1)
-			current_wp = delta_waypoint[waypoint.current_waypoint_index]
-
-			print(f"Current idx={waypoint.current_waypoint_index},elasped={cur_waypoint_elasped_time:.2f}ms , current_wp={current_wp}")
-			
-			v, w = pd_controller(current_wp)
-			if reverse_mode:
-				v *= -1
-			vel_msg.linear.x = v
-			vel_msg.angular.z = w
-			print(f"publishing new vel: {v}, {w}")
-		vel_out.publish(vel_msg)
-		waypoint_msg = Float32MultiArray()
-		waypoint_msg.data = waypoints.astype(np.float32).reshape(-1).tolist()
-		# waypoint_msg.data = smoothed_waypoints.astype(np.float32).reshape(-1).tolist() # Bspline
-		fitted_waypoint_pub.publish(waypoint_msg)
-		rate.sleep()
+			waypoint_msg = Float32MultiArray()
+			waypoint_msg.data = waypoints.astype(np.float32).reshape(-1).tolist()
+			# waypoint_msg.data = smoothed_waypoints.astype(np.float32).reshape(-1).tolist() # Bspline
+			fitted_waypoint_pub.publish(waypoint_msg)
+			rate.sleep()
+	except KeyboardInterrupt:
+		stop_robot("KeyboardInterrupt received, publishing zero velocity and stopping...")
+		rospy.signal_shutdown("KeyboardInterrupt")
+	finally:
+		stop_robot("publishing zero velocity and stopping...")
 	
 
 if __name__ == '__main__':
 	main()
+
+
+
+
+
+
+
+
