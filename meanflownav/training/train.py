@@ -184,7 +184,7 @@ def train(
                 )
 
             # Total loss
-            total_loss = alpha * dist_loss + (1 - alpha) * (flow_loss + aux_flow_loss)
+            total_loss = alpha * dist_loss + (1 - alpha) * (flow_loss + aux_flow_loss)  #0.1*aux_flow_loss
 
             # Optimize
             optimizer.zero_grad()
