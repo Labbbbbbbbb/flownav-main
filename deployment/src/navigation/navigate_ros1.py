@@ -1,3 +1,4 @@
+
 import os
 import cv2
 
@@ -28,20 +29,45 @@ from utils import to_numpy, transform_images, load_model, msg_to_pil
 # Flow_Correct /VLM Scorer 组件
 from reward.flow_correct import TrajectoryProjector
 from reward.vlm_trajectory_scorer import VLMTrajectoryScorer
+import matplotlib.pyplot as plt
+ACTION_STATS = {
+    'min': np.array([-2.5, -4]),
+    'max': np.array([5, 4])
+}
 
-# Visualization
-# from visualize_goals import GoalVisualizer
+# --- 从你的相机参数中提取 ---
+CAMERA_HEIGHT = 0.4446
+CAMERA_X_OFFSET = 0.3612
+CAMERA_MATRIX = np.array([
+    [386.548, 0.0, 328.326],
+    [0.0, 386.171, 243.573],
+    [0.0, 0.0, 1.0]
+])
+DIST_COEFFS = np.array([-0.054461, 0.063385, 0.000409, -0.000540, -0.019851, 0.0, 0.0, 0.0])
+VIZ_IMAGE_SIZE = (640, 480) # 根据 cx, cy 推断出的分辨率
+fig=None
+
+
+
+# CONSTANTS
+TOPOMAP_IMAGES_DIR = "../topomaps/images"
+MODEL_WEIGHTS_PATH = "../model_weights"
+ROBOT_CONFIG_PATH ="../../config/robot.yaml"
+MODEL_CONFIG_PATH = "../../config/models.yaml"
+with open(ROBOT_CONFIG_PATH, "r") as f:
+    robot_config = yaml.safe_load(f)
+MAX_V = robot_config["max_v"]
+MAX_W = robot_config["max_w"]
+RATE = robot_config["frame_rate"] 
+
+# Visualization colors
+COLORS = ['cyan', 'magenta', 'yellow', 'lime', 'red']
 
 
 # 配置路径（请根据你的实际情况检查这些路径）
 TOPOMAP_IMAGES_DIR = "../../topomaps/images"
 ROBOT_CONFIG_PATH = "../../config/robot.yaml"
 MODEL_CONFIG_PATH = "../../config/models.yaml"
-DEBUG_RAW_TRAJ = os.getenv("DEBUG_RAW_TRAJ", "0") == "1"
-DEBUG_RAW_TRAJ_DIR = os.getenv(
-    "DEBUG_RAW_TRAJ_DIR",
-    str(Path(__file__).resolve().parents[3] / "logs" / "raw_traj_debug"),
-)
 
 # 加载机器人基本配置
 with open(ROBOT_CONFIG_PATH, "r") as f:
@@ -57,7 +83,6 @@ REACHED_GOAL_TOPIC = "/topoplan/reached_goal"
 OVERLAY_TOPIC = "/overlay_image"            #pub
 FITTED_WAYPOINT_TOPIC = "/fitted_waypoint"
 
-# TRAJS_TOPIC = "/candidate_trajs"
 
 # 全局变量
 context_queue = []
@@ -74,95 +99,6 @@ def tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> np.ndarray:
     return (image_tensor.permute(1, 2, 0).detach().cpu().numpy() * 255.0).astype(np.uint8)
 
 
-def debug_dump_raw_trajectories(raw_trajs, debug_dir, tag="traj", max_trajs=6):
-    """Dump raw trajectory predictions before any pixel projection.
-
-    This helper is meant to inspect the model output in its native coordinate
-    space, before it is scaled, flipped, or passed into the VLM scorer. It is
-    useful when trajectories look visually incorrect after projection, because
-    it lets you answer a more basic question first: did the model already
-    predict a bad trajectory, or did the projection / scaling step distort it?
-
-    Args:
-        raw_trajs: A numpy array-like object containing one or more trajectories.
-            Supported shapes are typically:
-            - (T, 2): a single trajectory with T waypoints
-            - (N, T, 2): N trajectories, each with T waypoints
-            The function also tolerates extra trailing dimensions as long as the
-            last dimension contains at least x/y coordinates.
-        debug_dir: Directory where the debug image will be written. The directory
-            is created automatically if it does not exist.
-        tag: Short label used in the filename and plot title so you can associate
-            the dump with a specific timestep, rollout, or experiment.
-        max_trajs: Maximum number of trajectories to draw in the same figure.
-            This keeps the plot readable when many samples are produced.
-
-    Behavior:
-        - Converts the input to a numpy array and normalizes 2D inputs to a batch
-          of size 1.
-        - Prints basic statistics to stdout, including shape, dtype, min/max,
-          and the fraction of finite values.
-        - Saves a matplotlib figure showing each trajectory in x-y space with
-          markers at waypoints and a small index label near the first point.
-
-    Output:
-        A PNG file named like "{tag}_{timestamp}.png" under debug_dir.
-    """
-    raw_trajs = np.asarray(raw_trajs)
-    if raw_trajs.ndim == 2:
-        raw_trajs = raw_trajs[None, ...]
-
-    finite_mask = np.isfinite(raw_trajs)
-    finite_ratio = float(finite_mask.mean()) if raw_trajs.size else 0.0
-    raw_min = float(np.nanmin(raw_trajs)) if raw_trajs.size else float("nan")
-    raw_max = float(np.nanmax(raw_trajs)) if raw_trajs.size else float("nan")
-    print(
-        f"[TRAJ DEBUG] {tag}: shape={raw_trajs.shape}, dtype={raw_trajs.dtype}, "
-        f"min={raw_min:.4f}, max={raw_max:.4f}, finite_ratio={finite_ratio:.4f}"
-    )
-
-    debug_dir = Path(debug_dir)
-    debug_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    save_path = debug_dir / f"{tag}_{stamp}.png"
-
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(6, 6))
-    colors = plt.cm.tab10(np.linspace(0, 1, min(len(raw_trajs), max_trajs)))
-    for idx, traj in enumerate(raw_trajs[:max_trajs]):
-        if traj.shape[-1] < 2:
-            continue
-        traj_xy = np.asarray(traj[:, :2], dtype=np.float32)
-        ax.plot(
-            traj_xy[:, 0],
-            traj_xy[:, 1],
-            marker="o",
-            markersize=3,
-            linewidth=1.5,
-            color=colors[idx],
-            label=f"traj {idx}",
-        )
-        ax.text(traj_xy[0, 0], traj_xy[0, 1], str(idx), fontsize=8, color=colors[idx])
-
-    ax.axhline(0.0, color="gray", linewidth=0.8, alpha=0.5)
-    ax.axvline(0.0, color="gray", linewidth=0.8, alpha=0.5)
-    ax.set_title(f"Raw trajectories before projection ({tag})")
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_aspect("equal", adjustable="box")
-    ax.grid(True, alpha=0.3)
-    if len(raw_trajs) <= max_trajs:
-        ax.legend(loc="best", fontsize=8)
-    fig.tight_layout()
-    fig.savefig(save_path, dpi=160)
-    plt.close(fig)
-    print(f"[TRAJ DEBUG] saved raw trajectory plot to: {save_path}")
-
-
 
 def callback_obs(msg):
     """处理来自 Realsense 的 ROS 1 图像消息"""
@@ -176,6 +112,120 @@ def callback_obs(msg):
         else:
             context_queue.pop(0)
             context_queue.append(obs_img)
+
+def init_visualization():
+    """Initialize matplotlib figure with two subplots."""
+    global fig, ax_left, ax_right
+    plt.ion()  # Enable interactive mode
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(16, 6))
+    fig.suptitle('NoMaD Navigation - Real-time Visualization', fontsize=14, fontweight='bold')
+    ax_left.set_title('Current Camera + Predicted Trajectories (5 samples)')
+    ax_right.set_title('TopoMap Navigation Goal')
+    return fig, ax_left, ax_right
+
+def unnormalize_data(ndata, stats):
+    """将模型输出从 [-1, 1] 转回 物理坐标 (米)"""
+    ndata = (ndata + 1) / 2
+    data = ndata * (stats['max'] - stats['min']) + stats['min']
+    return data
+
+def get_pos_pixels(points, camera_height, camera_x_offset, camera_matrix, dist_coeffs, tilt_deg=-5):
+    """
+    tilt_deg: 相机向下倾斜的角度（向下为负）
+    """
+    n_points = points.shape[0]
+    xyz = np.zeros((n_points, 3))
+    xyz[:, 0] = points[:, 0] + camera_x_offset 
+    xyz[:, 1] = points[:, 1]                   
+    xyz[:, 2] = -camera_height                 
+
+    # 构造旋转矩阵 (绕X轴旋转，即抬头/低头)
+    tilt_rad = np.radians(tilt_deg)      
+    # 这里是一个简化的处理方式：调整 xyz_cv 的投影坐标
+    # 更好的办法是设置 rvec = (tilt_rad, 0, 0)
+    rvec = np.array([tilt_rad, 0, 0], dtype=float)
+    tvec = np.array([0, 0, 0], dtype=float)
+    
+    # 按照训练代码的 stack 逻辑
+    xyz_cv = np.stack([xyz[:, 1], -xyz[:, 2], xyz[:, 0]], axis=-1)
+    
+    uv, _ = cv2.projectPoints(xyz_cv, rvec, tvec, camera_matrix, dist_coeffs)
+    uv = uv.reshape(n_points, 2)
+    
+    # 保持和训练一致的水平镜像处理
+    uv[:, 0] = 640 - uv[:, 0] 
+    
+    return uv
+
+
+def visualize_navigation(
+    current_obs_img: PILImage.Image,
+    topomap_img: PILImage.Image,
+    predicted_trajectories: np.ndarray, # (num_samples, horizon, 2)
+    closest_node: int,
+    goal_node: int,
+    min_dist: float = None,
+    sg_idx: int = None
+):
+    global fig, ax_left, ax_right
+    
+    if fig is None:
+        init_visualization()
+    
+    ax_left.clear()
+    ax_right.clear()
+    
+    # --- 左图处理 ---
+    # 将 PIL 图片转为 numpy 以便获取尺寸
+    obs_np = np.array(current_obs_img)
+    h, w = obs_np.shape[:2]
+    ax_left.imshow(current_obs_img)
+    
+    # 绘制每一条轨迹
+    for i, traj_norm in enumerate(predicted_trajectories):
+        # 1. 反归一化：把 [-1, 1] 转为米
+        traj_xy_norm = traj_norm[:, :2] 
+
+        # traj_meters = unnormalize_data(traj_norm, ACTION_STATS)
+        # traj_meters = unnormalize_data(traj_xy_norm, ACTION_STATS)
+        traj_meters=traj_xy_norm
+        # 2. 投影：把 米 转为 像素坐标
+        traj_pixels = get_pos_pixels(
+            traj_meters, 
+            CAMERA_HEIGHT, 
+            CAMERA_X_OFFSET, 
+            CAMERA_MATRIX, 
+            DIST_COEFFS
+        )
+        
+        # 3. 绘图
+        color = COLORS[i % len(COLORS)]
+        u_coords = traj_pixels[:, 0]
+        v_coords = traj_pixels[:, 1]
+        
+        # 过滤掉图像外的点（可选）
+        mask = (u_coords >= 0) & (u_coords < w) & (v_coords >= 0) & (v_coords < h)
+        
+        ax_left.plot(u_coords[mask], v_coords[mask], color=color, linewidth=2, 
+                    marker='o', markersize=4, label=f'Traj {i+1}', alpha=0.8)
+    
+    ax_left.set_xlim(0, w)
+    ax_left.set_ylim(h, 0) # 像素坐标系Y轴向下
+    ax_left.set_title(f'Current Camera + {len(predicted_trajectories)} Predicted Trajectories')
+    ax_left.legend(loc='upper right', fontsize=8)
+    
+    # --- 右图处理 ---
+    ax_right.imshow(topomap_img)
+    if min_dist is not None:
+        if sg_idx is not None:
+            ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node}) - Dist: {min_dist:.2f} - SG_idx: {sg_idx}')
+        else:
+            ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node}) - Dist: {min_dist:.2f}')
+    else:
+        ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node})')
+    
+    plt.pause(0.01)
+
 
 def callback_fitted(waypoint_msg: Float32MultiArray):
     """Callback function for the waypoint subscriber"""
