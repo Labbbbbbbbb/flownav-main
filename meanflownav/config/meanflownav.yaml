@@ -8,7 +8,7 @@ train: True
 batch_size: 64
 eval_batch_size: 64
 epochs: 30
-gpu_ids: [1]
+gpu_ids: [3]
 num_workers: 8
 lr: 1e-4
 optimizer: adamw
