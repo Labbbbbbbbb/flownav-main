@@ -28,7 +28,7 @@ from utils import to_numpy, transform_images, load_model, msg_to_pil
 # Flow_Correct /VLM Scorer 组件
 from reward.flow_correct import TrajectoryProjector
 from reward.vlm_trajectory_scorer import VLMTrajectoryScorer
-
+import matplotlib.pyplot as plt
 ACTION_STATS = {
     'min': np.array([-2.5, -4]),
     'max': np.array([5, 4])
@@ -44,15 +44,15 @@ CAMERA_MATRIX = np.array([
 ])
 DIST_COEFFS = np.array([-0.054461, 0.063385, 0.000409, -0.000540, -0.019851, 0.0, 0.0, 0.0])
 VIZ_IMAGE_SIZE = (640, 480) # 根据 cx, cy 推断出的分辨率
-
+fig=None
 
 
 
 # CONSTANTS
 TOPOMAP_IMAGES_DIR = "../topomaps/images"
 MODEL_WEIGHTS_PATH = "../model_weights"
-ROBOT_CONFIG_PATH ="../config/robot.yaml"
-MODEL_CONFIG_PATH = "../config/models.yaml"
+ROBOT_CONFIG_PATH ="../../config/robot.yaml"
+MODEL_CONFIG_PATH = "../../config/models.yaml"
 with open(ROBOT_CONFIG_PATH, "r") as f:
     robot_config = yaml.safe_load(f)
 MAX_V = robot_config["max_v"]
@@ -182,8 +182,8 @@ def visualize_navigation(
         traj_xy_norm = traj_norm[:, :2] 
 
         # traj_meters = unnormalize_data(traj_norm, ACTION_STATS)
-        traj_meters = unnormalize_data(traj_xy_norm, ACTION_STATS)
-        
+        # traj_meters = unnormalize_data(traj_xy_norm, ACTION_STATS)
+        traj_meters=traj_xy_norm
         # 2. 投影：把 米 转为 像素坐标
         traj_pixels = get_pos_pixels(
             traj_meters, 

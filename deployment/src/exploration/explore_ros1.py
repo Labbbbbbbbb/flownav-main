@@ -14,7 +14,7 @@ from PIL import Image as PILImage,ImageDraw, ImageFont
 from pathlib import Path
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+import matplotlib.pyplot as plt
 # ROS 1 适配
 import rospy
 from sensor_msgs.msg import Image
@@ -55,6 +55,7 @@ OVERLAY_TOPIC = "/overlay_image"            #pub
 # TRAJS_TOPIC = "/candidate_trajs"
 
 # 全局变量
+fig=None
 context_queue = []
 obs_img = None
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -171,7 +172,8 @@ def visualize_navigation(
         traj_xy_norm = traj_norm[:, :2] 
 
         # traj_meters = unnormalize_data(traj_norm, ACTION_STATS)
-        traj_meters = unnormalize_data(traj_xy_norm, ACTION_STATS)
+        # traj_meters = unnormalize_data(traj_xy_norm, ACTION_STATS)
+        traj_meters=traj_xy_norm
         
         # 2. 投影：把 米 转为 像素坐标
         traj_pixels = get_pos_pixels(
@@ -279,7 +281,6 @@ def main(args):
     # 3. 加载拓扑地图
     dir_name = args.dir
     topomap_name_dir = os.path.join(TOPOMAP_IMAGES_DIR, dir_name)
-    dt = dt
     img_idx = 0
 
 
@@ -345,40 +346,40 @@ def main(args):
                     obs_cond = obs_cond.repeat(args.num_samples, 1, 1)
 
                 # sampling / one-step MeanFlow
-                t_sample_start = time.perf_counter()
-                noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
-                t = torch.ones(noisy_action.shape[0], device=device)
-                h = torch.ones(noisy_action.shape[0], device=device)
-                t_noise_start = time.perf_counter()
-                u = model.noise_pred_net(sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond)
-                t_noise_end = time.perf_counter()
-                traj = noisy_action - u
-                naction = to_numpy(get_action(traj))
-                t_sample_end = time.perf_counter()
-                timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
-                timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
-
-                # sampleing / k-step MeanFlow
-                # k_steps = max(1, int(args.k_steps))
                 # t_sample_start = time.perf_counter()
                 # noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
                 # t = torch.ones(noisy_action.shape[0], device=device)
                 # h = torch.ones(noisy_action.shape[0], device=device)
                 # t_noise_start = time.perf_counter()
-                # x = noisy_action
-                # dt = 1.0 / float(k_steps)
-                # for k in range(k_steps):
-                #     t = torch.full((x.shape[0],), 1.0 - float(k) * dt, device=device)
-                #     h = torch.full((x.shape[0],), dt, device=device)
-                #     u = model.noise_pred_net(sample=x, timestep=t, stoptime=h, global_cond=obs_cond)
-                #     # Treat the network output as the learned displacement over the current interval.
-                #     x = x - u  #*dt ?
+                # u = model.noise_pred_net(sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond)
                 # t_noise_end = time.perf_counter()
-                # traj = x
+                # traj = noisy_action - u
                 # naction = to_numpy(get_action(traj))
                 # t_sample_end = time.perf_counter()
                 # timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
                 # timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
+
+                # sampleing / k-step MeanFlow
+                k_steps = max(1, int(args.k_steps))
+                t_sample_start = time.perf_counter()
+                noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
+                t = torch.ones(noisy_action.shape[0], device=device)
+                h = torch.ones(noisy_action.shape[0], device=device)
+                t_noise_start = time.perf_counter()
+                x = noisy_action
+                dt = 1.0 / float(k_steps)
+                for k in range(k_steps):
+                    t = torch.full((x.shape[0],), 1.0 - float(k) * dt, device=device)
+                    h = torch.full((x.shape[0],), dt, device=device)
+                    u = model.noise_pred_net(sample=x, timestep=t, stoptime=h, global_cond=obs_cond)
+                    # Treat the network output as the learned displacement over the current interval.
+                    x = x - u*dt 
+                t_noise_end = time.perf_counter()
+                traj = x
+                naction = to_numpy(get_action(traj))
+                t_sample_end = time.perf_counter()
+                timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
+                timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
 
                 # Save for logging
                 cur_naction = naction
