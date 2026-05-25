@@ -1,5 +1,6 @@
 import numpy as np
 import yaml
+import signal
 from typing import Tuple
 
 # ROS
@@ -31,6 +32,8 @@ waypoint = ROSData(WAYPOINT_TIMEOUT, name="waypoint")
 reached_goal = False
 reverse_mode = False
 current_yaw = None
+vel_out = None
+shutdown_requested = False
 
 def clip_angle(theta) -> float:
 	"""Clip angle to [-pi, pi]"""
@@ -75,29 +78,64 @@ def callback_reached_goal(reached_goal_msg: Bool):
 	reached_goal = reached_goal_msg.data
 
 
+def publish_zero_velocity(vel_out):
+	"""Publish a zero velocity command to stop the robot."""
+	if vel_out is None:
+		return
+	zero_vel_msg = Twist()
+	for _ in range(3):
+		vel_out.publish(zero_vel_msg)
+		rospy.sleep(0.05)
+
+
+def stop_robot(reason: str):
+	"""Publish zero velocity once before shutting down."""
+	global shutdown_requested
+	if shutdown_requested:
+		return
+	shutdown_requested = True
+	print(reason)
+	publish_zero_velocity(vel_out)
+
+
+def handle_sigint(signum, frame):
+	stop_robot("KeyboardInterrupt received, publishing zero velocity and stopping...")
+	rospy.signal_shutdown("SIGINT")
+
+
 def main():
-	global vel_msg, reverse_mode
-	rospy.init_node("PD_CONTROLLER", anonymous=False)
+	global vel_msg, reverse_mode, vel_out
+	rospy.init_node("PD_CONTROLLER", anonymous=False, disable_signals=True)
 	waypoint_sub = rospy.Subscriber(WAYPOINT_TOPIC, Float32MultiArray, callback_drive, queue_size=1)
 	reached_goal_sub = rospy.Subscriber(REACHED_GOAL_TOPIC, Bool, callback_reached_goal, queue_size=1)
 	vel_out = rospy.Publisher(VEL_TOPIC, Twist, queue_size=1)
+	signal.signal(signal.SIGINT, handle_sigint)
+	signal.signal(signal.SIGTERM, handle_sigint)
+	rospy.on_shutdown(lambda: publish_zero_velocity(vel_out))
 	rate = rospy.Rate(RATE)
 	print("Registered with master node. Waiting for waypoints...")
-	while not rospy.is_shutdown():
-		vel_msg = Twist()
-		if reached_goal:
+	try:
+		while not rospy.is_shutdown():
+			vel_msg = Twist()
+			if reached_goal:
+				vel_out.publish(vel_msg)
+				print("Reached goal! Stopping...")
+				return
+			elif waypoint.is_valid(verbose=True):
+				v, w = pd_controller(waypoint.get())
+				if reverse_mode:
+					v *= -1
+				vel_msg.linear.x = v
+				vel_msg.angular.z = w
+				print(f"publishing new vel: {v}, {w}")
 			vel_out.publish(vel_msg)
-			print("Reached goal! Stopping...")
-			return
-		elif waypoint.is_valid(verbose=True):
-			v, w = pd_controller(waypoint.get())
-			if reverse_mode:
-				v *= -1
-			vel_msg.linear.x = v
-			vel_msg.angular.z = w
-			print(f"publishing new vel: {v}, {w}")
-		vel_out.publish(vel_msg)
-		rate.sleep()
+			rate.sleep()
+	except KeyboardInterrupt:
+		stop_robot("KeyboardInterrupt received, publishing zero velocity and stopping...")
+		rospy.signal_shutdown("KeyboardInterrupt")
+	finally:
+		stop_robot("publishing zero velocity and stopping...")
+
 	
 
 if __name__ == '__main__':

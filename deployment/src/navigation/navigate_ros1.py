@@ -30,6 +30,7 @@ from utils import to_numpy, transform_images, load_model, msg_to_pil
 # Flow_Correct /VLM Scorer 组件
 from reward.flow_correct import TrajectoryProjector
 from reward.vlm_trajectory_scorer import VLMTrajectoryScorer
+import matplotlib.pyplot as plt
 
 ACTION_STATS = {
     'min': np.array([-2.5, -4]),
@@ -47,7 +48,7 @@ CAMERA_MATRIX = np.array([
 DIST_COEFFS = np.array([-0.054461, 0.063385, 0.000409, -0.000540, -0.019851, 0.0, 0.0, 0.0])
 VIZ_IMAGE_SIZE = (640, 480) # 根据 cx, cy 推断出的分辨率
 
-
+fig=None
 
 
 # CONSTANTS

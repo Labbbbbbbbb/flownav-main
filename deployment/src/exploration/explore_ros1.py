@@ -14,7 +14,7 @@ from PIL import Image as PILImage,ImageDraw, ImageFont
 from pathlib import Path
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+import matplotlib.pyplot as plt
 # ROS 1 适配
 import rospy
 from sensor_msgs.msg import Image
@@ -55,6 +55,7 @@ OVERLAY_TOPIC = "/overlay_image"            #pub
 # TRAJS_TOPIC = "/candidate_trajs"
 
 # 全局变量
+fig = None
 context_queue = []
 obs_img = None
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -171,8 +172,8 @@ def visualize_navigation(
         traj_xy_norm = traj_norm[:, :2] 
 
         # traj_meters = unnormalize_data(traj_norm, ACTION_STATS)
-        traj_meters = unnormalize_data(traj_xy_norm, ACTION_STATS)
-        
+        # traj_meters = unnormalize_data(traj_xy_norm, ACTION_STATS)
+        traj_meters = traj_xy_norm
         # 2. 投影：把 米 转为 像素坐标
         traj_pixels = get_pos_pixels(
             traj_meters, 
