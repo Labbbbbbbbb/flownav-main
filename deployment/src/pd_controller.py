@@ -37,6 +37,8 @@ reached_goal = False
 reverse_mode = False
 current_yaw = None
 waypoint = None
+vel_out = None
+shutdown_requested = False
 
 def get_delta(actions: np.ndarray) -> np.ndarray:
     ex_actions = np.concatenate(
