@@ -14,6 +14,7 @@ from PIL import Image as PILImage,ImageDraw, ImageFont
 from pathlib import Path
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from cv_bridge import CvBridge
 
 # ROS 1 适配
 import rospy
@@ -23,7 +24,8 @@ from std_msgs.msg import Bool, Float32MultiArray,MultiArrayDimension
 # FlowNav / MeanFlow 核心组件
 import torchdiffeq
 from flownav.training.utils import get_action
-from utils import to_numpy, transform_images, load_model, msg_to_pil
+from utils import to_numpy, transform_images, load_model, remove_files_in_dir
+
 
 # Flow_Correct /VLM Scorer 组件
 from reward.flow_correct import TrajectoryProjector
@@ -67,18 +69,18 @@ def tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> np.ndarray:
     return (image_tensor.permute(1, 2, 0).detach().cpu().numpy() * 255.0).astype(np.uint8)
 
 
+def callback_obs(self, msg):
+    self.obs_img = self.br.compressed_imgmsg_to_cv2(msg)
 
-def callback_obs(msg):
-    """处理来自 Realsense 的 ROS 1 图像消息"""
-    # 注意：在 Python 3.10 下，我们使用 utils.py 里的 msg_to_pil 绕过 cv_bridge 兼容性问题
-    obs_img = msg_to_pil(msg)
-    
-    if context_size is not None:
-        if len(context_queue) < context_size + 1:
-            context_queue.append(obs_img)
+    self.obs_img = PILImage.fromarray(cv2.cvtColor(self.obs_img, cv2.COLOR_BGR2RGB))
+
+    self.current_image = np.array(self.obs_img)
+    if self.context_size is not None:
+        if len(self.context_queue) < self.context_size + 1:
+            self.context_queue.append(self.obs_img)
         else:
-            context_queue.pop(0)
-            context_queue.append(obs_img)
+            self.context_queue.pop(0)
+            self.context_queue.append(self.obs_img)
             
 @staticmethod
 def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
@@ -150,12 +152,19 @@ def main(args):
     model.eval()
 
     # 3. 加载拓扑地图
-    topomap_dir = os.path.join(TOPOMAP_IMAGES_DIR, args.dir)
-    topomap_filenames = sorted(os.listdir(topomap_dir), key=lambda x: int(x.split(".")[0]))
-    topomap = []
-    print(f"[*] 正在加载拓扑图: {args.dir}, 共 {len(topomap_filenames)} 节点")
-    for fname in topomap_filenames:
-        topomap.append(PILImage.open(os.path.join(topomap_dir, fname)))
+    topomap_name_dir = os.path.join(TOPOMAP_IMAGES_DIR, dir_name)
+    dt = dt
+    img_idx = 0
+    br = CvBridge()
+
+    if not os.path.isdir(topomap_name_dir):
+        os.makedirs(topomap_name_dir)
+    else:
+        print(f"{topomap_name_dir} already exists. Removing previous images...")
+        remove_files_in_dir(topomap_name_dir)
+        
+    print("Waiting for images...")
+
 
     closest_node = 0
     im_idx = 0
@@ -278,7 +287,7 @@ def main(args):
 
                 if args.vis_scale != 1.0:
                     vis_img = cv2.resize(annotated_np, None, fx=args.vis_scale, fy=args.vis_scale, interpolation=cv2.INTER_LINEAR)
-                cv2.imshow('Observation (left) vs Goal (right)', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
+                cv2.imshow('Observation', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
                 cv2.waitKey(1)
                 
                 
