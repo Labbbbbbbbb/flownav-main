@@ -408,7 +408,7 @@ def main(args):
                         closest_node=closest_node,
                         goal_node=goal_node,
                         min_dist=min_dist,
-                        sg_idx=sg_idx
+                        sg_idx=sg_idx+start
                     )
                 t_proj_end = time.perf_counter()
                 timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
@@ -508,7 +508,7 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt", required=True, type=str, help="模型权重路径 (.pth)")
     parser.add_argument("--dir", "-d", required=True, type=str, help="拓扑图目录名")
     parser.add_argument("--waypoint", "-w", default=2, type=int)
-    parser.add_argument("--k_steps", "-k", default=10, type=int, help="ODE 求解步数")
+    parser.add_argument("--k_steps", "-k", default=3, type=int, help="ODE 求解步数")
     parser.add_argument("--radius", "-r", default=4, type=int) #原来是4
     parser.add_argument("--close_threshold", "-t", default=10, type=int)
     parser.add_argument("--goal-node", "-g", default=-1, type=int)
