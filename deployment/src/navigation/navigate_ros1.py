@@ -160,7 +160,9 @@ def visualize_navigation(
     topomap_img: PILImage.Image,
     predicted_trajectories: np.ndarray, # (num_samples, horizon, 2)
     closest_node: int,
-    goal_node: int
+    goal_node: int,
+    min_dist: float = None,
+    sg_idx: int = None
 ):
     global fig, ax_left, ax_right
     
@@ -211,7 +213,13 @@ def visualize_navigation(
     
     # --- 右图处理 ---
     ax_right.imshow(topomap_img)
-    ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node})')
+    if min_dist is not None:
+        if sg_idx is not None:
+            ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node}) - Dist: {min_dist:.2f} - SG_idx: {sg_idx}')
+        else:
+            ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node}) - Dist: {min_dist:.2f}')
+    else:
+        ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node})')
     
     plt.pause(0.01)
 
@@ -353,51 +361,54 @@ def main(args):
                 timeline["select_ms"] = (t_select_end - t_select_start) * 1000.0
 
                 # sampling / one-step MeanFlow
-                t_sample_start = time.perf_counter()
-                noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
-                t = torch.ones(noisy_action.shape[0], device=device)
-                h = torch.ones(noisy_action.shape[0], device=device)
-                t_noise_start = time.perf_counter()
-                u = model.noise_pred_net(sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond)
-                t_noise_end = time.perf_counter()
-                traj = noisy_action - u
-                naction = to_numpy(get_action(traj))
-                t_sample_end = time.perf_counter()
-                timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
-                timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
-
-
-                # sampleing / k-step MeanFlow
-                # k_steps = max(1, int(args.k_steps))
                 # t_sample_start = time.perf_counter()
                 # noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
                 # t = torch.ones(noisy_action.shape[0], device=device)
                 # h = torch.ones(noisy_action.shape[0], device=device)
                 # t_noise_start = time.perf_counter()
-                # x = noisy_action
-                # dt = 1.0 / float(k_steps)
-                # for k in range(k_steps):
-                #     t = torch.full((x.shape[0],), 1.0 - float(k) * dt, device=device)
-                #     h = torch.full((x.shape[0],), dt, device=device)
-                #     u = model.noise_pred_net(sample=x, timestep=t, stoptime=h, global_cond=obs_cond)
-                #     # Treat the network output as the learned displacement over the current interval.
-                #     x = x - u  #*dt ?
+                # u = model.noise_pred_net(sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond)
                 # t_noise_end = time.perf_counter()
-                # traj = x
+                # traj = noisy_action - u
                 # naction = to_numpy(get_action(traj))
                 # t_sample_end = time.perf_counter()
                 # timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
                 # timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
 
+
+                # sampleing / k-step MeanFlow
+                k_steps = max(1, int(args.k_steps))
+                t_sample_start = time.perf_counter()
+                noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
+                t = torch.ones(noisy_action.shape[0], device=device)
+                h = torch.ones(noisy_action.shape[0], device=device)
+                t_noise_start = time.perf_counter()
+                x = noisy_action
+                dt = 1.0 / float(k_steps)
+                for k in range(k_steps):
+                    t = torch.full((x.shape[0],), 1.0 - float(k) * dt, device=device)
+                    h = torch.full((x.shape[0],), dt, device=device)
+                    u = model.noise_pred_net(sample=x, timestep=t, stoptime=h, global_cond=obs_cond)
+                    # Treat the network output as the learned displacement over the current interval.
+                    x = x - u*dt #?
+                t_noise_end = time.perf_counter()
+                traj = x
+                naction = to_numpy(get_action(traj))
+                t_sample_end = time.perf_counter()
+                timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
+                timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
+
                 t_proj_start = time.perf_counter()
                 current_img = context_queue[-1]
                 topomap_img = topomap[closest_node]
+                min_dist = dists[min_idx]
                 visualize_navigation(
                         current_obs_img=current_img,
                         topomap_img=topomap_img,
                         predicted_trajectories=naction,
                         closest_node=closest_node,
-                        goal_node=goal_node
+                        goal_node=goal_node,
+                        min_dist=min_dist,
+                        sg_idx=sg_idx
                     )
                 t_proj_end = time.perf_counter()
                 timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
@@ -499,7 +510,7 @@ if __name__ == "__main__":
     parser.add_argument("--waypoint", "-w", default=2, type=int)
     parser.add_argument("--k_steps", "-k", default=10, type=int, help="ODE 求解步数")
     parser.add_argument("--radius", "-r", default=4, type=int) #原来是4
-    parser.add_argument("--close_threshold", "-t", default=3, type=int)
+    parser.add_argument("--close_threshold", "-t", default=10, type=int)
     parser.add_argument("--goal-node", "-g", default=-1, type=int)
     parser.add_argument("--vis-scale", default=5.0, type=float, help="可视化窗口缩放倍数（1.0=原始, 1.5=放大1.5倍等）")
     parser.add_argument("--num-samples", "-n", default=8, type=int)
