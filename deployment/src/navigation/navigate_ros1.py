@@ -267,14 +267,7 @@ def main(args):
                 print("[TIMELINE] ", json.dumps(timeline, ensure_ascii=False))
                 
                 
-                # draw=ImageDraw.Draw(annotated_PIL)
-                # font = ImageFont.load_default()
-                # draw.text(
-                #     (5, 5),
-                #     str(best_idx),
-                #     fill="magenta",
-                #     font=font,
-                # )
+
                 
                 annotated_np = np.array(annotated_PIL)
                 annotated_image_msg = msg_from_numpy(annotated_np)  # 转换为 ROS 消息格式
