@@ -367,6 +367,28 @@ def main(args):
                 timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
 
 
+                # sampleing / k-step MeanFlow
+                # k_steps = max(1, int(args.k_steps))
+                # t_sample_start = time.perf_counter()
+                # noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
+                # t = torch.ones(noisy_action.shape[0], device=device)
+                # h = torch.ones(noisy_action.shape[0], device=device)
+                # t_noise_start = time.perf_counter()
+                # x = noisy_action
+                # dt = 1.0 / float(k_steps)
+                # for k in range(k_steps):
+                #     t = torch.full((x.shape[0],), 1.0 - float(k) * dt, device=device)
+                #     h = torch.full((x.shape[0],), dt, device=device)
+                #     u = model.noise_pred_net(sample=x, timestep=t, stoptime=h, global_cond=obs_cond)
+                #     # Treat the network output as the learned displacement over the current interval.
+                #     x = x - u  #*dt ?
+                # t_noise_end = time.perf_counter()
+                # traj = x
+                # naction = to_numpy(get_action(traj))
+                # t_sample_end = time.perf_counter()
+                # timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
+                # timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
+
                 t_proj_start = time.perf_counter()
                 current_img = context_queue[-1]
                 topomap_img = topomap[closest_node]
