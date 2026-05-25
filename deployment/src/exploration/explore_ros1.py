@@ -14,7 +14,6 @@ from PIL import Image as PILImage,ImageDraw, ImageFont
 from pathlib import Path
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from cv_bridge import CvBridge
 
 # ROS 1 适配
 import rospy
@@ -69,18 +68,18 @@ def tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> np.ndarray:
     return (image_tensor.permute(1, 2, 0).detach().cpu().numpy() * 255.0).astype(np.uint8)
 
 
-def callback_obs(self, msg):
-    self.obs_img = self.br.compressed_imgmsg_to_cv2(msg)
 
-    self.obs_img = PILImage.fromarray(cv2.cvtColor(self.obs_img, cv2.COLOR_BGR2RGB))
-
-    self.current_image = np.array(self.obs_img)
-    if self.context_size is not None:
-        if len(self.context_queue) < self.context_size + 1:
-            self.context_queue.append(self.obs_img)
+def callback_obs(msg):
+    """处理来自 Realsense 的 ROS 1 图像消息"""
+    # 注意：在 Python 3.10 下，我们使用 utils.py 里的 msg_to_pil 绕过 cv_bridge 兼容性问题
+    obs_img = msg_to_pil(msg)
+    
+    if context_size is not None:
+        if len(context_queue) < context_size + 1:
+            context_queue.append(obs_img)
         else:
-            self.context_queue.pop(0)
-            self.context_queue.append(self.obs_img)
+            context_queue.pop(0)
+            context_queue.append(obs_img)
             
 @staticmethod
 def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
@@ -152,10 +151,11 @@ def main(args):
     model.eval()
 
     # 3. 加载拓扑地图
+    dir_name = args.dir
     topomap_name_dir = os.path.join(TOPOMAP_IMAGES_DIR, dir_name)
     dt = dt
     img_idx = 0
-    br = CvBridge()
+
 
     if not os.path.isdir(topomap_name_dir):
         os.makedirs(topomap_name_dir)
@@ -330,6 +330,7 @@ if __name__ == "__main__":
         type=str,
         help="Path to store the exploration topomap",
     )
+
     args = parser.parse_args()
     main(args)
 
