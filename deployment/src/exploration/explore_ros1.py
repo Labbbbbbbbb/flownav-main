@@ -23,7 +23,7 @@ from std_msgs.msg import Bool, Float32MultiArray,MultiArrayDimension
 # FlowNav / MeanFlow 核心组件
 import torchdiffeq
 from flownav.training.utils import get_action
-from utils import to_numpy, transform_images, load_model, remove_files_in_dir
+from utils import to_numpy, transform_images, load_model, remove_files_in_dir, msg_to_pil
 
 
 # Flow_Correct /VLM Scorer 组件
@@ -80,7 +80,133 @@ def callback_obs(msg):
         else:
             context_queue.pop(0)
             context_queue.append(obs_img)
-            
+
+
+ACTION_STATS = {
+    'min': np.array([-2.5, -4]),
+    'max': np.array([5, 4])
+}
+
+# --- 从你的相机参数中提取 ---
+CAMERA_HEIGHT = 0.4446
+CAMERA_X_OFFSET = 0.3612
+CAMERA_MATRIX = np.array([
+    [386.548, 0.0, 328.326],
+    [0.0, 386.171, 243.573],
+    [0.0, 0.0, 1.0]
+])
+DIST_COEFFS = np.array([-0.054461, 0.063385, 0.000409, -0.000540, -0.019851, 0.0, 0.0, 0.0])
+VIZ_IMAGE_SIZE = (640, 480) # 根据 cx, cy 推断出的分辨率
+
+COLORS = ['cyan', 'magenta', 'yellow', 'lime', 'red']
+def init_visualization():
+    """Initialize matplotlib figure with two subplots."""
+    global fig, ax_left, ax_right
+    plt.ion()  # Enable interactive mode
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(16, 6))
+    fig.suptitle('NoMaD Navigation - Real-time Visualization', fontsize=14, fontweight='bold')
+    ax_left.set_title('Current Camera + Predicted Trajectories (5 samples)')
+    ax_right.set_title('TopoMap Navigation Goal')
+    return fig, ax_left, ax_right
+
+def unnormalize_data(ndata, stats):
+    """将模型输出从 [-1, 1] 转回 物理坐标 (米)"""
+    ndata = (ndata + 1) / 2
+    data = ndata * (stats['max'] - stats['min']) + stats['min']
+    return data
+
+def get_pos_pixels(points, camera_height, camera_x_offset, camera_matrix, dist_coeffs, tilt_deg=-5):
+    """
+    tilt_deg: 相机向下倾斜的角度（向下为负）
+    """
+    n_points = points.shape[0]
+    xyz = np.zeros((n_points, 3))
+    xyz[:, 0] = points[:, 0] + camera_x_offset 
+    xyz[:, 1] = points[:, 1]                   
+    xyz[:, 2] = -camera_height                 
+
+    # 构造旋转矩阵 (绕X轴旋转，即抬头/低头)
+    tilt_rad = np.radians(tilt_deg)      
+    # 这里是一个简化的处理方式：调整 xyz_cv 的投影坐标
+    # 更好的办法是设置 rvec = (tilt_rad, 0, 0)
+    rvec = np.array([tilt_rad, 0, 0], dtype=float)
+    tvec = np.array([0, 0, 0], dtype=float)
+    
+    # 按照训练代码的 stack 逻辑
+    xyz_cv = np.stack([xyz[:, 1], -xyz[:, 2], xyz[:, 0]], axis=-1)
+    
+    uv, _ = cv2.projectPoints(xyz_cv, rvec, tvec, camera_matrix, dist_coeffs)
+    uv = uv.reshape(n_points, 2)
+    
+    # 保持和训练一致的水平镜像处理
+    uv[:, 0] = 640 - uv[:, 0] 
+    
+    return uv
+
+
+def visualize_navigation(
+    current_obs_img: PILImage.Image,
+    topomap_img: PILImage.Image,
+    predicted_trajectories: np.ndarray, # (num_samples, horizon, 2)
+    closest_node: int,
+    goal_node: int
+):
+    global fig, ax_left, ax_right
+    
+    if fig is None:
+        init_visualization()
+    
+    ax_left.clear()
+    ax_right.clear()
+    
+    # --- 左图处理 ---
+    # 将 PIL 图片转为 numpy 以便获取尺寸
+    obs_np = np.array(current_obs_img)
+    h, w = obs_np.shape[:2]
+    ax_left.imshow(current_obs_img)
+    
+    # 绘制每一条轨迹
+    for i, traj_norm in enumerate(predicted_trajectories):
+        # 1. 反归一化：把 [-1, 1] 转为米
+        traj_xy_norm = traj_norm[:, :2] 
+
+        # traj_meters = unnormalize_data(traj_norm, ACTION_STATS)
+        traj_meters = unnormalize_data(traj_xy_norm, ACTION_STATS)
+        
+        # 2. 投影：把 米 转为 像素坐标
+        traj_pixels = get_pos_pixels(
+            traj_meters, 
+            CAMERA_HEIGHT, 
+            CAMERA_X_OFFSET, 
+            CAMERA_MATRIX, 
+            DIST_COEFFS
+        )
+        
+        # 3. 绘图
+        color = COLORS[i % len(COLORS)]
+        u_coords = traj_pixels[:, 0]
+        v_coords = traj_pixels[:, 1]
+        
+        # 过滤掉图像外的点（可选）
+        mask = (u_coords >= 0) & (u_coords < w) & (v_coords >= 0) & (v_coords < h)
+        
+        ax_left.plot(u_coords[mask], v_coords[mask], color=color, linewidth=2, 
+                    marker='o', markersize=4, label=f'Traj {i+1}', alpha=0.8)
+    
+    ax_left.set_xlim(0, w)
+    ax_left.set_ylim(h, 0) # 像素坐标系Y轴向下
+    ax_left.set_title(f'Current Camera + {len(predicted_trajectories)} Predicted Trajectories')
+    ax_left.legend(loc='upper right', fontsize=8)
+    
+    # --- 右图处理 ---
+    if topomap_img is not None:
+        ax_right.imshow(topomap_img)
+        ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node})')
+    
+    plt.pause(0.01)
+
+
+
 @staticmethod
 def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
     msg = Image()
@@ -241,54 +367,66 @@ def main(args):
                 sampled_actions_msg.data = sampled_action_message_data.tolist()
                 sampled_actions_pub.publish(sampled_actions_msg)
 
-                
-                # projection + prepare image
+
                 t_proj_start = time.perf_counter()
-                projected_traj = Trajprojector.project_points(naction)
-                last_obs = obs_images[0, -3:, :, :].detach().cpu()
-                mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-                std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-                last_obs = last_obs * std + mean
-                last_obs = torch.clamp(last_obs, 0.0, 1.0)
-                obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8)
-                projected_traj = projected_traj * np.array([96.0/640.0, 96.0/480.0])
-                projected_traj[..., 0] = 96.0 - projected_traj[..., 0]
+                current_img = context_queue[-1]
+                visualize_navigation(
+                        current_obs_img=current_img,
+                        topomap_img=None,
+                        predicted_trajectories=naction,
+                        closest_node=-1,
+                        goal_node=-1,
+                    )
                 t_proj_end = time.perf_counter()
                 timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
+                
+                # # projection + prepare image
+                # t_proj_start = time.perf_counter()
+                # projected_traj = Trajprojector.project_points(naction)
+                # last_obs = obs_images[0, -3:, :, :].detach().cpu()
+                # mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+                # std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+                # last_obs = last_obs * std + mean
+                # last_obs = torch.clamp(last_obs, 0.0, 1.0)
+                # obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8)
+                # projected_traj = projected_traj * np.array([96.0/640.0, 96.0/480.0])
+                # projected_traj[..., 0] = 96.0 - projected_traj[..., 0]
+                # t_proj_end = time.perf_counter()
+                # timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
 
-                # VLM scoring (may be local or remote) -- measure end-to-end call
-                t_vlm_start = time.perf_counter()
-                score_result = Scorer.score(obs_img_np, projected_traj)
-                t_vlm_end = time.perf_counter()
-                scores = score_result.get("scores")
-                annotated_PIL = score_result.get("annotated_image")
-                timeline["vlm_call_ms"] = (t_vlm_end - t_vlm_start) * 1000.0
+                # # VLM scoring (may be local or remote) -- measure end-to-end call
+                # t_vlm_start = time.perf_counter()
+                # score_result = Scorer.score(obs_img_np, projected_traj)
+                # t_vlm_end = time.perf_counter()
+                # scores = score_result.get("scores")
+                # annotated_PIL = score_result.get("annotated_image")
+                # timeline["vlm_call_ms"] = (t_vlm_end - t_vlm_start) * 1000.0
 
-                # selection
-                t_sel2_start = time.perf_counter()
-                best_idx = int(np.argmax(scores)) if scores is not None else 0
-                t_sel2_end = time.perf_counter()
-                timeline["selection_ms"] = (t_sel2_end - t_sel2_start) * 1000.0
+                # # selection
+                # t_sel2_start = time.perf_counter()
+                # best_idx = int(np.argmax(scores)) if scores is not None else 0
+                # t_sel2_end = time.perf_counter()
+                # timeline["selection_ms"] = (t_sel2_end - t_sel2_start) * 1000.0
 
-                t_end = time.perf_counter()
-                timeline["loop_total_ms"] = (t_end - t0) * 1000.0
-                timeline["loop_end_ts"] = datetime.now().isoformat()
+                # t_end = time.perf_counter()
+                # timeline["loop_total_ms"] = (t_end - t0) * 1000.0
+                # timeline["loop_end_ts"] = datetime.now().isoformat()
 
-                # attach per-step timestamps if available from scorer
-                if isinstance(score_result, dict) and "timings" in score_result:
-                    timeline["scorer_timings"] = score_result["timings"]
+                # # attach per-step timestamps if available from scorer
+                # if isinstance(score_result, dict) and "timings" in score_result:
+                #     timeline["scorer_timings"] = score_result["timings"]
 
-                print("[TIMELINE] ", json.dumps(timeline, ensure_ascii=False))
+                # print("[TIMELINE] ", json.dumps(timeline, ensure_ascii=False))
                 
 
 
-                annotated_np = np.array(annotated_PIL)
-                annotated_image_msg = msg_from_numpy(annotated_np)  # 转换为 ROS 消息格式
+                # annotated_np = np.array(annotated_PIL)
+                # annotated_image_msg = msg_from_numpy(annotated_np)  # 转换为 ROS 消息格式
 
-                if args.vis_scale != 1.0:
-                    vis_img = cv2.resize(annotated_np, None, fx=args.vis_scale, fy=args.vis_scale, interpolation=cv2.INTER_LINEAR)
-                cv2.imshow('Observation', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
-                cv2.waitKey(1)
+                # if args.vis_scale != 1.0:
+                #     vis_img = cv2.resize(annotated_np, None, fx=args.vis_scale, fy=args.vis_scale, interpolation=cv2.INTER_LINEAR)
+                # cv2.imshow('Observation', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
+                # cv2.waitKey(1)
                 
                 
                 # 发布第一个样本的指定 waypoint

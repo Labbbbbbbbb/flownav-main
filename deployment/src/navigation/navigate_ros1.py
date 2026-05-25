@@ -366,71 +366,78 @@ def main(args):
                 timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
                 timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
 
-                # projection + prepare image
+
                 t_proj_start = time.perf_counter()
-                projected_traj = Trajprojector.project_points(naction)
-                last_obs = obs_images[0, -3:, :, :].detach().cpu()
-                mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-                std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-                last_obs = last_obs * std + mean
-                last_obs = torch.clamp(last_obs, 0.0, 1.0)
-                obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8)
-                projected_traj = projected_traj * np.array([96.0/640.0, 96.0/480.0])
-                projected_traj[..., 0] = 96.0 - projected_traj[..., 0]
+                current_img = context_queue[-1]
+                topomap_img = topomap[closest_node]
+                visualize_navigation(
+                        current_obs_img=current_img,
+                        topomap_img=topomap_img,
+                        predicted_trajectories=naction,
+                        closest_node=closest_node,
+                        goal_node=goal_node
+                    )
                 t_proj_end = time.perf_counter()
                 timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
+                # projection + prepare image
+                # t_proj_start = time.perf_counter()
+                # projected_traj = Trajprojector.project_points(naction)
+                # last_obs = obs_images[0, -3:, :, :].detach().cpu()
+                # mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+                # std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+                # last_obs = last_obs * std + mean
+                # last_obs = torch.clamp(last_obs, 0.0, 1.0)
+                # obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8)
+                # projected_traj = projected_traj * np.array([96.0/640.0, 96.0/480.0])
+                # projected_traj[..., 0] = 96.0 - projected_traj[..., 0]
+                # t_proj_end = time.perf_counter()
+                # timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
 
-                # VLM scoring (may be local or remote) -- measure end-to-end call
-                t_vlm_start = time.perf_counter()
-                score_result = Scorer.score(obs_img_np, projected_traj)
-                t_vlm_end = time.perf_counter()
-                scores = score_result.get("scores")
-                annotated_PIL = score_result.get("annotated_image")
-                timeline["vlm_call_ms"] = (t_vlm_end - t_vlm_start) * 1000.0
+                # # VLM scoring (may be local or remote) -- measure end-to-end call
+                # t_vlm_start = time.perf_counter()
+                # score_result = Scorer.score(obs_img_np, projected_traj)
+                # t_vlm_end = time.perf_counter()
+                # scores = score_result.get("scores")
+                # annotated_PIL = score_result.get("annotated_image")
+                # timeline["vlm_call_ms"] = (t_vlm_end - t_vlm_start) * 1000.0
 
                 # selection
-                t_sel2_start = time.perf_counter()
-                best_idx = int(np.argmax(scores)) if scores is not None else 0
-                t_sel2_end = time.perf_counter()
-                timeline["selection_ms"] = (t_sel2_end - t_sel2_start) * 1000.0
+                # t_sel2_start = time.perf_counter()
+                # best_idx = int(np.argmax(scores)) if scores is not None else 0
+                # t_sel2_end = time.perf_counter()
+                # timeline["selection_ms"] = (t_sel2_end - t_sel2_start) * 1000.0
 
-                t_end = time.perf_counter()
-                timeline["loop_total_ms"] = (t_end - t0) * 1000.0
-                timeline["loop_end_ts"] = datetime.now().isoformat()
+                # t_end = time.perf_counter()
+                # timeline["loop_total_ms"] = (t_end - t0) * 1000.0
+                # timeline["loop_end_ts"] = datetime.now().isoformat()
 
-                # attach per-step timestamps if available from scorer
-                if isinstance(score_result, dict) and "timings" in score_result:
-                    timeline["scorer_timings"] = score_result["timings"]
+                # # attach per-step timestamps if available from scorer
+                # if isinstance(score_result, dict) and "timings" in score_result:
+                #     timeline["scorer_timings"] = score_result["timings"]
 
-                print("[TIMELINE] ", json.dumps(timeline, ensure_ascii=False))
+                # print("[TIMELINE] ", json.dumps(timeline, ensure_ascii=False))
                 
                 
 
                 
-                annotated_np = np.array(annotated_PIL)
-                annotated_image_msg = msg_from_numpy(annotated_np)  # 转换为 ROS 消息格式
+                # annotated_np = np.array(annotated_PIL)
+                # annotated_image_msg = msg_from_numpy(annotated_np)  # 转换为 ROS 消息格式
 
 
                 # 在主循环内，在 annotated_image_msg = msg_from_numpy(annotated_np) 之后加：
-                goal_img_np = tensor_to_rgb_uint8(goal_images[sg_idx])
-                if annotated_np.shape[0] != goal_img_np.shape[0]:
-                    goal_img_np = cv2.resize(goal_img_np, (goal_img_np.shape[1], annotated_np.shape[0]))
+                # goal_img_np = tensor_to_rgb_uint8(goal_images[sg_idx])
+                # if annotated_np.shape[0] != goal_img_np.shape[0]:
+                #     goal_img_np = cv2.resize(goal_img_np, (goal_img_np.shape[1], annotated_np.shape[0]))
 
-                vis_img = np.hstack([
-                    annotated_np,
-                    goal_img_np,
-                ])
-                if args.vis_scale != 1.0:
-                    vis_img = cv2.resize(vis_img, None, fx=args.vis_scale, fy=args.vis_scale, interpolation=cv2.INTER_LINEAR)
-                cv2.imshow('Observation (left) vs Goal (right)', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
-                cv2.waitKey(1)
-                
-                # 实时可视化：观测图 + 目标图
-                # visualizer.update(annotated_np, goal_images[sg_idx])
-
-                # 选择分数最高的轨迹对应的 waypoint 作为输出
-                # chosen_waypoint = naction[best_idx][args.waypoint]
-                
+                # vis_img = np.hstack([
+                #     annotated_np,
+                #     goal_img_np,
+                # ])
+                # if args.vis_scale != 1.0:
+                #     vis_img = cv2.resize(vis_img, None, fx=args.vis_scale, fy=args.vis_scale, interpolation=cv2.INTER_LINEAR)
+                # cv2.imshow('Observation (left) vs Goal (right)', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
+                # cv2.waitKey(1)
+  
                 # 发布第一个样本的指定 waypoint
                 chosen_waypoint = naction[0][args.waypoint]  #直接取第一个样本，可以加入api进行选择
 
