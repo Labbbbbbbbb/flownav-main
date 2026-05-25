@@ -123,6 +123,30 @@ def callback_reached_goal(reached_goal_msg: Bool):
 	reached_goal = reached_goal_msg.data
 
 
+def publish_zero_velocity(vel_out):
+	"""Publish a zero velocity command to stop the robot."""
+	if vel_out is None:
+		return
+	zero_vel_msg = Twist()
+	for _ in range(3):
+		vel_out.publish(zero_vel_msg)
+		rospy.sleep(0.05)
+
+
+def stop_robot(reason: str):
+	"""Publish zero velocity once before shutting down."""
+	global shutdown_requested
+	if shutdown_requested:
+		return
+	shutdown_requested = True
+	print(reason)
+	publish_zero_velocity(vel_out)
+
+
+def handle_sigint(signum, frame):
+	stop_robot("KeyboardInterrupt received, publishing zero velocity and stopping...")
+	rospy.signal_shutdown("SIGINT")
+
 def main():
 	global vel_msg, reverse_mode,waypoint
 	rospy.init_node("PD_CONTROLLER", anonymous=False)
