@@ -13,7 +13,7 @@ from topic_names import (WAYPOINT_TOPIC,
        					FITTED_WAYPOINT_TOPIC)
 from ros_data import ROSData
 from utils import clip_angle
-
+import signal
 
 # CONSTS
 CONFIG_PATH = "../config/robot.yaml"
@@ -150,8 +150,8 @@ def handle_sigint(signum, frame):
 	rospy.signal_shutdown("SIGINT")
 
 def main():
-	global vel_msg, reverse_mode,waypoint
-	rospy.init_node("PD_CONTROLLER", anonymous=False)
+	global vel_msg, reverse_mode, waypoint, vel_out
+	rospy.init_node("PD_CONTROLLER", anonymous=False, disable_signals=True)
 	waypoint = ROSData(WAYPOINT_TIMEOUT, queue_size=8, name="waypoint")
 	signal.signal(signal.SIGINT, handle_sigint)
 	signal.signal(signal.SIGTERM, handle_sigint)
