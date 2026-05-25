@@ -221,7 +221,7 @@ def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
     msg.data = rgb.tobytes()
     return msg
 
-def save_images_and_actions(self):
+def save_images_and_actions():
     if cur_img is not None and cur_naction is not None:
         print(f"Saving Image and action {im_idx}")
         cur_img.save(f"{cur_exp_im_dir}/{im_idx}.png")
@@ -478,7 +478,7 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt", required=True, type=str, help="模型权重路径 (.pth)")
     parser.add_argument("--dir", "-d", required=True, type=str, help="拓扑图目录名")
     parser.add_argument("--waypoint", "-w", default=2, type=int)
-    parser.add_argument("--k_steps", "-k", default=10, type=int, help="ODE 求解步数")
+    parser.add_argument("--k_steps", "-k", default=3, type=int, help="ODE 求解步数")
     parser.add_argument("--radius", "-r", default=4, type=int) #原来是4
     parser.add_argument("--close_threshold", "-t", default=3, type=int)
     parser.add_argument("--goal-node", "-g", default=-1, type=int)

@@ -448,7 +448,7 @@ def main(args):
                 # if isinstance(score_result, dict) and "timings" in score_result:
                 #     timeline["scorer_timings"] = score_result["timings"]
 
-                # print("[TIMELINE] ", json.dumps(timeline, ensure_ascii=False))
+                print("[TIMELINE] ", json.dumps(timeline, ensure_ascii=False))
                 
                 
 
