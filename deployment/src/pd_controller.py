@@ -153,7 +153,8 @@ def main():
 	global vel_msg, reverse_mode,waypoint
 	rospy.init_node("PD_CONTROLLER", anonymous=False)
 	waypoint = ROSData(WAYPOINT_TIMEOUT, queue_size=8, name="waypoint")
-
+	signal.signal(signal.SIGINT, handle_sigint)
+	signal.signal(signal.SIGTERM, handle_sigint)
 	waypoint_sub = rospy.Subscriber(WAYPOINT_TOPIC, Float32MultiArray, callback_drive, queue_size=1)
 	reached_goal_sub = rospy.Subscriber(REACHED_GOAL_TOPIC, Bool, callback_reached_goal, queue_size=1)
 	vel_out = rospy.Publisher(VEL_TOPIC, Twist, queue_size=1)
