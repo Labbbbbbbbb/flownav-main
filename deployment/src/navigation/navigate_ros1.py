@@ -54,8 +54,8 @@ fig=None
 # CONSTANTS
 TOPOMAP_IMAGES_DIR = "../topomaps/images"
 MODEL_WEIGHTS_PATH = "../model_weights"
-ROBOT_CONFIG_PATH ="../config/robot.yaml"
-MODEL_CONFIG_PATH = "../config/models.yaml"
+ROBOT_CONFIG_PATH ="../../config/robot.yaml"
+MODEL_CONFIG_PATH = "../../config/models.yaml"
 with open(ROBOT_CONFIG_PATH, "r") as f:
     robot_config = yaml.safe_load(f)
 MAX_V = robot_config["max_v"]
@@ -158,12 +158,15 @@ def get_pos_pixels(points, camera_height, camera_x_offset, camera_matrix, dist_c
     return uv
 
 
+
 def visualize_navigation(
     current_obs_img: PILImage.Image,
     topomap_img: PILImage.Image,
     predicted_trajectories: np.ndarray, # (num_samples, horizon, 2)
     closest_node: int,
-    goal_node: int
+    goal_node: int,
+    min_dist: float = None,
+    sg_idx: int = None
 ):
     global fig, ax_left, ax_right
     
@@ -185,8 +188,8 @@ def visualize_navigation(
         traj_xy_norm = traj_norm[:, :2] 
 
         # traj_meters = unnormalize_data(traj_norm, ACTION_STATS)
-        traj_meters = unnormalize_data(traj_xy_norm, ACTION_STATS)
-        
+        # traj_meters = unnormalize_data(traj_xy_norm, ACTION_STATS)
+        traj_meters=traj_xy_norm
         # 2. 投影：把 米 转为 像素坐标
         traj_pixels = get_pos_pixels(
             traj_meters, 
@@ -214,10 +217,15 @@ def visualize_navigation(
     
     # --- 右图处理 ---
     ax_right.imshow(topomap_img)
-    ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node})')
+    if min_dist is not None:
+        if sg_idx is not None:
+            ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node}) - Dist: {min_dist:.2f} - SG_idx: {sg_idx}')
+        else:
+            ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node}) - Dist: {min_dist:.2f}')
+    else:
+        ax_right.set_title(f'TopoMap Goal (Node {closest_node}/{goal_node})')
     
     plt.pause(0.01)
-
 
 
 
@@ -381,12 +389,15 @@ def main(args):
                 t_proj_start = time.perf_counter()
                 current_img = context_queue[-1]
                 topomap_img = topomap[closest_node]
+                min_dist = dists[min_idx]
                 visualize_navigation(
                         current_obs_img=current_img,
                         topomap_img=topomap_img,
                         predicted_trajectories=naction,
                         closest_node=closest_node,
-                        goal_node=goal_node
+                        goal_node=goal_node,
+                        min_dist=min_dist,
+                        sg_idx=sg_idx+start
                     )
                 t_proj_end = time.perf_counter()
                 timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0

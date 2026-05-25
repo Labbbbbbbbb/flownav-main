@@ -280,7 +280,6 @@ def main(args):
     # 3. 加载拓扑地图
     dir_name = args.dir
     topomap_name_dir = os.path.join(TOPOMAP_IMAGES_DIR, dir_name)
-    dt = dt
     img_idx = 0
 
 

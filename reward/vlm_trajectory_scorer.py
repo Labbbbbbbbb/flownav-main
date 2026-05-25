@@ -9,8 +9,8 @@ from PIL import Image
 from volcenginesdkarkruntime import Ark
 from dotenv import load_dotenv
 
-from prompt import TRAJECTORY_SCORE_PROMPT
-from constant import TRAJ_COLORS
+# from prompt import TRAJECTORY_SCORE_PROMPT
+# from constant import TRAJ_COLORS
 # Load env from reward/ directory (supports both `env` and `.env` filenames)
 load_dotenv(Path(__file__).parent / "env")
 load_dotenv(Path(__file__).parent / ".env")
