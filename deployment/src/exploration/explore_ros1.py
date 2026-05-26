@@ -59,6 +59,8 @@ fig=None
 context_queue = []
 obs_img = None
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+obs_cnt=0
+
 
 def tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> np.ndarray:
     """Convert a normalized CHW tensor back to an RGB uint8 image for visualization."""
@@ -72,15 +74,18 @@ def tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> np.ndarray:
 
 def callback_obs(msg):
     """处理来自 Realsense 的 ROS 1 图像消息"""
-    # 注意：在 Python 3.10 下，我们使用 utils.py 里的 msg_to_pil 绕过 cv_bridge 兼容性问题
-    obs_img = msg_to_pil(msg)
-    
-    if context_size is not None:
-        if len(context_queue) < context_size + 1:
-            context_queue.append(obs_img)
-        else:
-            context_queue.pop(0)
-            context_queue.append(obs_img)
+    # 注意：在 Python 3.10 下，我们使用 utils.py 里的 msg_to_pil 绕过 cv_bridge 
+    global obs_cnt
+    obs_cnt=obs_cnt+1
+    if(obs_cnt%2==0):
+        obs_img = msg_to_pil(msg)
+
+        if context_size is not None:
+            if len(context_queue) < context_size + 1:
+                context_queue.append(obs_img)
+            else:
+                context_queue.pop(0)
+                context_queue.append(obs_img)
 
 
 ACTION_STATS = {
@@ -478,7 +483,7 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt", required=True, type=str, help="模型权重路径 (.pth)")
     parser.add_argument("--dir", "-d", required=True, type=str, help="拓扑图目录名")
     parser.add_argument("--waypoint", "-w", default=2, type=int)
-    parser.add_argument("--k_steps", "-k", default=3, type=int, help="ODE 求解步数")
+    parser.add_argument("--k_steps", "-k", default=10, type=int, help="ODE 求解步数")
     parser.add_argument("--radius", "-r", default=4, type=int) #原来是4
     parser.add_argument("--close_threshold", "-t", default=3, type=int)
     parser.add_argument("--goal-node", "-g", default=-1, type=int)
