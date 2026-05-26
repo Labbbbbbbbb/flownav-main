@@ -318,7 +318,8 @@ def main(args):
 
     closest_node = 0
     goal_node = len(topomap) - 1 if args.goal_node == -1 else args.goal_node
-    
+    sg_idx=0
+    start=0
     # 4. Scorer初始化
     Trajprojector = TrajectoryProjector(dataset_name="deploy")
     Scorer=VLMTrajectoryScorer()
@@ -474,7 +475,7 @@ def main(args):
             overlay_pub.publish(annotated_image_msg) # 发布带注释的图像到 ROS 话题
         
         # 检查是否到达终点
-        reached_goal = closest_node == goal_node
+        reached_goal = ((closest_node == goal_node or sg_idx+start==goal_node) and min_dist<10)
         goal_pub.publish(reached_goal)
         if reached_goal:
             print("[!] 到达终点！")
@@ -491,7 +492,7 @@ if __name__ == "__main__":
     parser.add_argument("--waypoint", "-w", default=2, type=int)
     parser.add_argument("--k_steps", "-k", default=3, type=int, help="ODE 求解步数")
     parser.add_argument("--radius", "-r", default=4, type=int) #原来是4
-    parser.add_argument("--close_threshold", "-t", default=3, type=int)
+    parser.add_argument("--close_threshold", "-t", default=8, type=int)
     parser.add_argument("--goal-node", "-g", default=-1, type=int)
     parser.add_argument("--vis-scale", default=5.0, type=float, help="可视化窗口缩放倍数（1.0=原始, 1.5=放大1.5倍等）")
     parser.add_argument("--num-samples", "-n", default=8, type=int)
