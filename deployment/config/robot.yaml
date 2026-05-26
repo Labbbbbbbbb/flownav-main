@@ -1,8 +1,8 @@
 # ~/flownav-main/deployment/config/robot.yaml
 
 # 基础运动参数
-max_v: 0.1            # 最大线速度 (根据你的 Scout 实际能力调整)
-max_w: 0.15           # 最大角速度
+max_v: 0.2            # 最大线速度 (根据你的 Scout 实际能力调整)
+max_w: 0.2           # 最大角速度
 frame_rate: 15        # 频率
 
 # 话题名称适配

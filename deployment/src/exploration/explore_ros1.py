@@ -229,7 +229,7 @@ def save_images_and_actions():
         with open(f"{cur_exp_pkl_dir}/{im_idx}.pkl", "wb") as f:
             pickle.dump(cur_naction, f)
             
-        self.im_idx += 1
+        im_idx += 1
 
 def main(args):
     global context_size,im_idx,cur_img,cur_naction,cur_exp_pkl_dir,cur_exp_im_dir
