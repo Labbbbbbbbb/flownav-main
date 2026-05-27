@@ -4,9 +4,6 @@
 action_stats:
   min: [-2.5, -4] # [min_dx, min_dy]
   max: [5, 4] # [max_dx, max_dy]
-# action_stats:
-#   min: [-1, -1] # [min_dx, min_dy]
-#   max: [1, 1] # [max_dx, max_dy]
 
 # data specific params
 recon:

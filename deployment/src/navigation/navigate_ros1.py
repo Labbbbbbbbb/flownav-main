@@ -80,7 +80,6 @@ IMAGE_TOPIC = "/camera/color/image_raw"
 WAYPOINT_TOPIC = "/waypoint"
 REACHED_GOAL_TOPIC = "/topoplan/reached_goal"
 OVERLAY_TOPIC = "/overlay_image"            #pub
-# TRAJS_TOPIC = "/candidate_trajs"
 
 # 全局变量
 context_queue = []
@@ -288,10 +287,8 @@ def main(args):
     Trajprojector = TrajectoryProjector(dataset_name="deploy")
     Scorer=VLMTrajectoryScorer()
     
-    # 5. 可视化初始化
-    # visualizer = GoalVisualizer(display=True, save=False)
     
-    # 6. ROS 1 节点初始化
+    # 5. ROS 1 节点初始化
     rospy.init_node("MEANFLOW_NAVIGATION", anonymous=False)
     rospy.Subscriber(IMAGE_TOPIC, Image, callback_obs, queue_size=1)
     waypoint_pub = rospy.Publisher(WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
@@ -303,7 +300,7 @@ def main(args):
     print(f"[*] ROS 1 节点就绪。等待图像话题: {IMAGE_TOPIC}")
     annotated_image_msg = None
 
-    # 7. 主循环
+    # 6. 主循环
     while not rospy.is_shutdown():
         chosen_waypoint = np.zeros(4)
 
@@ -360,21 +357,6 @@ def main(args):
                 t_select_end = time.perf_counter()
                 timeline["select_ms"] = (t_select_end - t_select_start) * 1000.0
 
-                # sampling / one-step MeanFlow
-                # t_sample_start = time.perf_counter()
-                # noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
-                # t = torch.ones(noisy_action.shape[0], device=device)
-                # h = torch.ones(noisy_action.shape[0], device=device)
-                # t_noise_start = time.perf_counter()
-                # u = model.noise_pred_net(sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond)
-                # t_noise_end = time.perf_counter()
-                # traj = noisy_action - u
-                # naction = to_numpy(get_action(traj))
-                # t_sample_end = time.perf_counter()
-                # timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
-                # timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
-
-
                 # sampleing / k-step MeanFlow
                 k_steps = max(1, int(args.k_steps))
                 t_sample_start = time.perf_counter()
@@ -389,7 +371,7 @@ def main(args):
                     h = torch.full((x.shape[0],), dt, device=device)
                     u = model.noise_pred_net(sample=x, timestep=t, stoptime=h, global_cond=obs_cond)
                     # Treat the network output as the learned displacement over the current interval.
-                    x = x - u*dt #?
+                    x = x - u*dt 
                 t_noise_end = time.perf_counter()
                 traj = x
                 naction = to_numpy(get_action(traj))
@@ -412,67 +394,10 @@ def main(args):
                     )
                 t_proj_end = time.perf_counter()
                 timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
-                # projection + prepare image
-                # t_proj_start = time.perf_counter()
-                # projected_traj = Trajprojector.project_points(naction)
-                # last_obs = obs_images[0, -3:, :, :].detach().cpu()
-                # mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-                # std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-                # last_obs = last_obs * std + mean
-                # last_obs = torch.clamp(last_obs, 0.0, 1.0)
-                # obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8)
-                # projected_traj = projected_traj * np.array([96.0/640.0, 96.0/480.0])
-                # projected_traj[..., 0] = 96.0 - projected_traj[..., 0]
-                # t_proj_end = time.perf_counter()
-                # timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
-
-                # # VLM scoring (may be local or remote) -- measure end-to-end call
-                # t_vlm_start = time.perf_counter()
-                # score_result = Scorer.score(obs_img_np, projected_traj)
-                # t_vlm_end = time.perf_counter()
-                # scores = score_result.get("scores")
-                # annotated_PIL = score_result.get("annotated_image")
-                # timeline["vlm_call_ms"] = (t_vlm_end - t_vlm_start) * 1000.0
-
-                # selection
-                # t_sel2_start = time.perf_counter()
-                # best_idx = int(np.argmax(scores)) if scores is not None else 0
-                # t_sel2_end = time.perf_counter()
-                # timeline["selection_ms"] = (t_sel2_end - t_sel2_start) * 1000.0
-
-                # t_end = time.perf_counter()
-                # timeline["loop_total_ms"] = (t_end - t0) * 1000.0
-                # timeline["loop_end_ts"] = datetime.now().isoformat()
-
-                # # attach per-step timestamps if available from scorer
-                # if isinstance(score_result, dict) and "timings" in score_result:
-                #     timeline["scorer_timings"] = score_result["timings"]
-
                 print("[TIMELINE] ", json.dumps(timeline, ensure_ascii=False))
                 
-                
-
-                
-                # annotated_np = np.array(annotated_PIL)
-                # annotated_image_msg = msg_from_numpy(annotated_np)  # 转换为 ROS 消息格式
-
-
-                # 在主循环内，在 annotated_image_msg = msg_from_numpy(annotated_np) 之后加：
-                # goal_img_np = tensor_to_rgb_uint8(goal_images[sg_idx])
-                # if annotated_np.shape[0] != goal_img_np.shape[0]:
-                #     goal_img_np = cv2.resize(goal_img_np, (goal_img_np.shape[1], annotated_np.shape[0]))
-
-                # vis_img = np.hstack([
-                #     annotated_np,
-                #     goal_img_np,
-                # ])
-                # if args.vis_scale != 1.0:
-                #     vis_img = cv2.resize(vis_img, None, fx=args.vis_scale, fy=args.vis_scale, interpolation=cv2.INTER_LINEAR)
-                # cv2.imshow('Observation (left) vs Goal (right)', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
-                # cv2.waitKey(1)
-  
                 # 发布第一个样本的指定 waypoint
-                chosen_waypoint = naction[0][args.waypoint]  #直接取第一个样本，可以加入api进行选择
+                chosen_waypoint = naction[0][args.waypoint]  
 
             print(f"[NAV] 最近节点: {closest_node} | 距离: {dists[min_idx]:.2f} | 目标: {goal_node}")
 
@@ -481,13 +406,6 @@ def main(args):
         waypoint_msg = Float32MultiArray()
         waypoint_msg.data = chosen_waypoint.tolist()
         waypoint_pub.publish(waypoint_msg)
-
-        # 发布候选轨迹
-        
-        # trajs_msg.data = naction.astype(np.float32).reshape(-1).tolist()
-        # trajs_pub.publish(trajs_msg)
-        
-
         
         if annotated_image_msg is not None:
             overlay_pub.publish(annotated_image_msg) # 发布带注释的图像到 ROS 话题
@@ -500,7 +418,6 @@ def main(args):
 
         ros_rate.sleep()
 
-    # visualizer.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -508,7 +425,7 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt", required=True, type=str, help="模型权重路径 (.pth)")
     parser.add_argument("--dir", "-d", required=True, type=str, help="拓扑图目录名")
     parser.add_argument("--waypoint", "-w", default=2, type=int)
-    parser.add_argument("--k_steps", "-k", default=10, type=int, help="ODE 求解步数")
+    parser.add_argument("--k_steps", "-k", default=3, type=int, help="ODE 求解步数")
     parser.add_argument("--radius", "-r", default=4, type=int) #原来是4
     parser.add_argument("--close_threshold", "-t", default=10, type=int)
     parser.add_argument("--goal-node", "-g", default=-1, type=int)
@@ -518,11 +435,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     main(args)
 
-    # try:
-    #     main(args)
-    # except KeyboardInterrupt:
-    #     print("[!] 中断输入，退出...")
-    # except Exception as e:
-    #     print(f"[!] 错误: {e}")
-    #     import traceback
-    #     traceback.print_exc()
