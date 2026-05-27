@@ -282,13 +282,8 @@ def main(args):
 
     closest_node = 0
     goal_node = len(topomap) - 1 if args.goal_node == -1 else args.goal_node
-    
-    # 4. Scorer初始化
-    Trajprojector = TrajectoryProjector(dataset_name="deploy")
-    Scorer=VLMTrajectoryScorer()
-    
-    
-    # 5. ROS 1 节点初始化
+
+    # 4. ROS 1 节点初始化
     rospy.init_node("MEANFLOW_NAVIGATION", anonymous=False)
     rospy.Subscriber(IMAGE_TOPIC, Image, callback_obs, queue_size=1)
     waypoint_pub = rospy.Publisher(WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
@@ -300,7 +295,7 @@ def main(args):
     print(f"[*] ROS 1 节点就绪。等待图像话题: {IMAGE_TOPIC}")
     annotated_image_msg = None
 
-    # 6. 主循环
+    # 5. 主循环
     while not rospy.is_shutdown():
         chosen_waypoint = np.zeros(4)
 

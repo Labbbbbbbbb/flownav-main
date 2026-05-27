@@ -15,10 +15,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import wandb
-
-from reward.flow_correct import TrajectoryProjector
-from reward.vlm_trajectory_scorer import VLMTrajectoryScorer
-
 # Reuse all data utilities from original flownav
 from flownav.training.utils import (
     ACTION_STATS,
@@ -32,8 +28,6 @@ from flownav.training.utils import (
     load_data_stats,
     #visualize_action_distribution as _original_visualize,
 )
-
-
 
 
 def model_output(
@@ -326,96 +320,6 @@ def visualize_flow_stage_distribution(
     plt.close(fig)
     return flow_stage_cache
 
-    # for batch_path in batch_stage_paths:
-    #     ax[0].plot(
-    #         batch_path[:, 0],
-    #         batch_path[:, 1],
-    #         color="0.75",
-    #         alpha=0.35,
-    #         linewidth=1.0,
-    #         marker="o",
-    #         markersize=3.0,
-    #     )
-
-    # ax[0].plot(
-    #     mean_stage_path[:, 0],
-    #     mean_stage_path[:, 1],
-    #     color="black",
-    #     linewidth=2.2,
-    #     alpha=0.9,
-    #     zorder=3,
-    # )
-    # for stage_idx, stage_ratio in enumerate(stage_ratios_np):
-    #     ax[0].scatter(
-    #         mean_stage_path[stage_idx, 0],
-    #         mean_stage_path[stage_idx, 1],
-    #         s=60,
-    #         color=stage_colors[stage_idx],
-    #         zorder=4,
-    #         label=f"t={stage_ratio:.2f}",
-    #     )
-    #     if stage_idx > 0:
-    #         ax[0].annotate(
-    #             "",
-    #             xy=mean_stage_path[stage_idx],
-    #             xytext=mean_stage_path[stage_idx - 1],
-    #             arrowprops=dict(
-    #                 arrowstyle="->",
-    #                 color=stage_colors[stage_idx],
-    #                 lw=1.8,
-    #                 alpha=0.9,
-    #             ),
-    #         )
-    # ax[0].set_title("flow stage path across batches")
-    # ax[0].set_xlabel("action x")
-    # ax[0].set_ylabel("action y")
-    # ax[0].grid(alpha=0.2)
-    # ax[0].set_aspect("equal", "box")
-    # ax[0].legend(bbox_to_anchor=(0.0, -0.25), loc="upper left", ncol=2)
-
-    # ax[1].plot(
-    #     stage_ratios_np,
-    #     mean_stage_path[:, 0],
-    #     color="tab:blue",
-    #     marker="o",
-    #     label="x mean",
-    # )
-    # ax[1].fill_between(
-    #     stage_ratios_np,
-    #     mean_stage_path[:, 0] - std_stage_path[:, 0],
-    #     mean_stage_path[:, 0] + std_stage_path[:, 0],
-    #     color="tab:blue",
-    #     alpha=0.15,
-    # )
-    # ax[1].plot(
-    #     stage_ratios_np,
-    #     mean_stage_path[:, 1],
-    #     color="tab:orange",
-    #     marker="o",
-    #     label="y mean",
-    # )
-    # ax[1].fill_between(
-    #     stage_ratios_np,
-    #     mean_stage_path[:, 1] - std_stage_path[:, 1],
-    #     mean_stage_path[:, 1] + std_stage_path[:, 1],
-    #     color="tab:orange",
-    #     alpha=0.15,
-    # )
-    # ax[1].set_title("stage-wise action statistics")
-    # ax[1].set_xlabel("stage ratio")
-    # ax[1].set_ylabel("action value")
-    # ax[1].grid(alpha=0.2)
-    # ax[1].legend()
-
-    # fig.suptitle(
-    #     f"{eval_type} epoch={epoch} batches={total_batches} samples={total_samples}",
-    #     y=1.02,
-    # )
-    # fig.set_size_inches(18.0, 7.5)
-    # fig.tight_layout()
-
-    
-    # return flow_stage_cache
 
 
 
@@ -481,9 +385,6 @@ def visualize_action_distribution(
     gc_distances_list = [] # 有目标条件下预测的距离值
     stage_ratios = np.array([0.0, 1.0], dtype=np.float32)   # 仅可视化初始高斯动作（t=0）和最终 MeanFlow 动作（t=1），中间阶段不绘制,以突出对比,如果是多NFES，这里应有中间分段
     gc_action_stages_list = [[] for _ in stage_ratios]
-
-    Trajprojector = TrajectoryProjector(dataset_name="deploy",image_size=(160,120))
-    Scorer = VLMTrajectoryScorer()
 
     # 遍历各子块，调用 model_output 进行推理
     for obs, goal in zip(batch_obs_images_list, batch_goal_images_list):
@@ -552,34 +453,7 @@ def visualize_action_distribution(
             ],
             axis=0,
         )
-        ##使用VLM评估分数
-        projected_traj = Trajprojector.project_points(gc_actions)  #shape=(num_samples，T，2)的uv坐标
-        # print(f"[DEBUG] projected_traj shape: {projected_traj.shape}, min={projected_traj.min()}, max={projected_traj.max()}")
-        # 将 CHW tensor 转为 (H, W, 3)
-        obs_image = batch_viz_obs_images[i].detach().cpu().permute(1, 2, 0).numpy()
-        # print(f"[DEBUG] obs_image shape: {obs_image.shape}, dtype: {obs_image.dtype}, min={obs_image.min()}, max={obs_image.max()}")
-        if obs_image.dtype != np.uint8:
-            scale = 255.0 if np.issubdtype(obs_image.dtype, np.floating) and obs_image.max() <= 1.0 else 1.0
-            obs_image = np.clip(obs_image * scale, 0, 255).astype(np.uint8)
-        # print(f"[DEBUG] obs_image after conversion: dtype={obs_image.dtype}, min={obs_image.min()}, max={obs_image.max()}")
-        
-        projected_traj = projected_traj * np.array([160.0/640.0, 120.0/480.0])
-        projected_traj[..., 0] = 160.0 - projected_traj[..., 0]
-
-        score_result = Scorer.score(obs_image, projected_traj)
-        scores = score_result["scores"]  # scores shape=(num_samples,)
-        annotated_image = score_result["annotated_image"]
-        # print(f"[DEBUG] annotated_image shape: {annotated_image.shape}, dtype: {annotated_image.dtype}, min={annotated_image.min()}, max={annotated_image.max()}")
-        # best_idx = int(np.argmax(scores))
-        annotated_np = np.array(annotated_image)
-        # 临时保存来验证
-        # import tempfile
-        # with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=visualize_path) as tmp:
-        #     from PIL import Image as PILImage
-        #     PILImage.fromarray(annotated_image).save(tmp.name)
-        #     print(f"[DEBUG] Saved annotated_image to: {tmp.name}")    
-
-
+       
 
         # 为每条轨迹指定颜色：探索=红，导航=绿，ground truth=品红
         traj_colors = (
@@ -619,40 +493,18 @@ def visualize_action_distribution(
             point_alphas=[1.0] * (1 + len(gc_action_flow_traj[i])),
             traj_alphas=[0.5] * len(gc_action_flow_traj[i]),
         )
-        # for sample_traj in gc_action_flow_traj[i]:  # sample_traj: (len(stage_ratios), 2)
-        #     for seg_idx in range(len(sample_traj) - 1):
-        #         t = seg_idx / max(len(sample_traj) - 2, 1)  # 0→1
-        #         color = (1 - t, t, 0)  # 红→绿渐变
-        #         ax[0].plot(
-        #             sample_traj[seg_idx:seg_idx+2, 0],
-        #             sample_traj[seg_idx:seg_idx+2, 1],
-        #             color=color, linewidth=1.5, alpha=0.6, marker="o", markersize=3,
-        #         )
+ 
 
         print('gc_action_flow_traj[i] shape:', gc_action_flow_traj[i].shape)  #（num_samples, len(stage_ratios), 2）
         print('traj_list shape:', traj_list.shape)
-        # stage_colors = plt.cm.plasma(np.linspace(0.1, 0.9, len(stage_ratios)))
-        # for stage_idx, stage_ratio in enumerate(stage_ratios):
-        #     stage_actions = gc_action_stages_list[stage_idx][i]
-        #     stage_mean_action = np.mean(stage_actions, axis=0)
-        #     ax[0].plot(
-        #         stage_mean_action[:, 0],
-        #         stage_mean_action[:, 1],
-        #         color=stage_colors[stage_idx],
-        #         linewidth=2.0,
-        #         linestyle="--" if stage_idx < len(stage_ratios) - 1 else "-",
-        #         alpha=0.95,
-        #         label=f"gc t={stage_ratio:.2f}",
-        #         marker="o",
-        #     )
+
         ax[0].legend(bbox_to_anchor=(0.0, -0.5), loc="upper left", ncol=2)
         # 将观测和目标图像从 (C, H, W) 转为 (H, W, C)，imshow 需要 channel-last 格式
-        #obs_image = to_numpy(batch_viz_obs_images[i])
+        obs_image = to_numpy(batch_viz_obs_images[i])
         goal_image = to_numpy(batch_viz_goal_images[i])
-        #obs_image = np.moveaxis(obs_image, 0, -1)   # (C,H,W) → (H,W,C)
+        obs_image = np.moveaxis(obs_image, 0, -1)   # (C,H,W) → (H,W,C)
         goal_image = np.moveaxis(goal_image, 0, -1) # (C,H,W) → (H,W,C)
-        # ax[2].imshow(obs_image)   # 第三列：当前观测帧
-        ax[2].imshow(annotated_np)   # 第三列：当前观测帧
+        ax[2].imshow(obs_image)   # 第三列：当前观测帧
         
         ax[3].imshow(goal_image)  # 第四列：目标图像
         ax[0].set_title("gaussian->final stages")
