@@ -493,7 +493,7 @@ def main(args):
             overlay_pub.publish(annotated_image_msg) # 发布带注释的图像到 ROS 话题
         
         # 检查是否到达终点
-        reached_goal = closest_node == goal_node
+        reached_goal = closest_node == goal_node and min_dist<10
         goal_pub.publish(reached_goal)
         if reached_goal:
             print("[!] 到达终点！")
@@ -508,7 +508,7 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt", required=True, type=str, help="模型权重路径 (.pth)")
     parser.add_argument("--dir", "-d", required=True, type=str, help="拓扑图目录名")
     parser.add_argument("--waypoint", "-w", default=2, type=int)
-    parser.add_argument("--k_steps", "-k", default=3, type=int, help="ODE 求解步数")
+    parser.add_argument("--k_steps", "-k", default=10, type=int, help="ODE 求解步数")
     parser.add_argument("--radius", "-r", default=4, type=int) #原来是4
     parser.add_argument("--close_threshold", "-t", default=10, type=int)
     parser.add_argument("--goal-node", "-g", default=-1, type=int)
