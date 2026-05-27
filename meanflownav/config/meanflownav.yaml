@@ -1,6 +1,6 @@
-project_name: flownav
+project_name: meanflownav
 entity: <YOUR ENTITY>
-run_name: flownav
+run_name: meanflownav
 
 # training setup
 use_wandb: True #True
