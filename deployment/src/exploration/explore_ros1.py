@@ -350,19 +350,6 @@ def main(args):
                 else:
                     obs_cond = obs_cond.repeat(args.num_samples, 1, 1)
 
-                # sampling / one-step MeanFlow
-                # t_sample_start = time.perf_counter()
-                # noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
-                # t = torch.ones(noisy_action.shape[0], device=device)
-                # h = torch.ones(noisy_action.shape[0], device=device)
-                # t_noise_start = time.perf_counter()
-                # u = model.noise_pred_net(sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond)
-                # t_noise_end = time.perf_counter()
-                # traj = noisy_action - u
-                # naction = to_numpy(get_action(traj))
-                # t_sample_end = time.perf_counter()
-                # timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
-                # timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
 
                 # sampleing / k-step MeanFlow
                 k_steps = max(1, int(args.k_steps))
@@ -408,57 +395,9 @@ def main(args):
                 t_proj_end = time.perf_counter()
                 timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
                 
-                # # projection + prepare image
-                # t_proj_start = time.perf_counter()
-                # projected_traj = Trajprojector.project_points(naction)
-                # last_obs = obs_images[0, -3:, :, :].detach().cpu()
-                # mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-                # std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-                # last_obs = last_obs * std + mean
-                # last_obs = torch.clamp(last_obs, 0.0, 1.0)
-                # obs_img_np = (last_obs.permute(1, 2, 0).numpy() * 255.0).astype(np.uint8)
-                # projected_traj = projected_traj * np.array([96.0/640.0, 96.0/480.0])
-                # projected_traj[..., 0] = 96.0 - projected_traj[..., 0]
-                # t_proj_end = time.perf_counter()
-                # timeline["projection_ms"] = (t_proj_end - t_proj_start) * 1000.0
-
-                # # VLM scoring (may be local or remote) -- measure end-to-end call
-                # t_vlm_start = time.perf_counter()
-                # score_result = Scorer.score(obs_img_np, projected_traj)
-                # t_vlm_end = time.perf_counter()
-                # scores = score_result.get("scores")
-                # annotated_PIL = score_result.get("annotated_image")
-                # timeline["vlm_call_ms"] = (t_vlm_end - t_vlm_start) * 1000.0
-
-                # # selection
-                # t_sel2_start = time.perf_counter()
-                # best_idx = int(np.argmax(scores)) if scores is not None else 0
-                # t_sel2_end = time.perf_counter()
-                # timeline["selection_ms"] = (t_sel2_end - t_sel2_start) * 1000.0
-
-                # t_end = time.perf_counter()
-                # timeline["loop_total_ms"] = (t_end - t0) * 1000.0
-                # timeline["loop_end_ts"] = datetime.now().isoformat()
-
-                # # attach per-step timestamps if available from scorer
-                # if isinstance(score_result, dict) and "timings" in score_result:
-                #     timeline["scorer_timings"] = score_result["timings"]
-
-                # print("[TIMELINE] ", json.dumps(timeline, ensure_ascii=False))
-                
-
-
-                # annotated_np = np.array(annotated_PIL)
-                # annotated_image_msg = msg_from_numpy(annotated_np)  # 转换为 ROS 消息格式
-
-                # if args.vis_scale != 1.0:
-                #     vis_img = cv2.resize(annotated_np, None, fx=args.vis_scale, fy=args.vis_scale, interpolation=cv2.INTER_LINEAR)
-                # cv2.imshow('Observation', cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
-                # cv2.waitKey(1)
-                
                 
                 # 发布第一个样本的指定 waypoint
-                chosen_waypoint = naction[0][args.waypoint]  #直接取第一个样本，可以加入api进行选择
+                chosen_waypoint = naction[0][args.waypoint]  
 
         # 发布 Waypoint 给 pd_controller
         
