@@ -16,9 +16,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import wandb
 
-from reward.flow_correct import TrajectoryProjector
-from reward.vlm_trajectory_scorer import VLMTrajectoryScorer
-
 # Reuse all data utilities from original flownav
 from flownav.training.utils import (
     ACTION_STATS,
