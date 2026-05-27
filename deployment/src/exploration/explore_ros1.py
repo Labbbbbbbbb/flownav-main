@@ -287,6 +287,7 @@ def main(args):
     dir_name = args.dir
     topomap_name_dir = os.path.join(TOPOMAP_IMAGES_DIR, dir_name)
     img_idx = 0
+    closest_node = 0
 
 
     if not os.path.isdir(topomap_name_dir):
@@ -296,17 +297,8 @@ def main(args):
         remove_files_in_dir(topomap_name_dir)
         
     print("Waiting for images...")
-
-
-    closest_node = 0
-    im_idx = 0
     
-    # 4. Scorer初始化
-    Trajprojector = TrajectoryProjector(dataset_name="deploy")
-    Scorer=VLMTrajectoryScorer()
-
-    
-    # 5. ROS 1 节点初始化
+    # 4. ROS 1 节点初始化
     rospy.init_node("MEANFLOW_NAVIGATION", anonymous=False)
     rospy.Subscriber(IMAGE_TOPIC, Image, callback_obs, queue_size=1)
     waypoint_pub = rospy.Publisher(WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
