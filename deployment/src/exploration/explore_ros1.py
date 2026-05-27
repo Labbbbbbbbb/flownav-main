@@ -310,7 +310,7 @@ def main(args):
     print(f"[*] ROS 1 节点就绪。等待图像话题: {IMAGE_TOPIC}")
     annotated_image_msg = None
 
-    # 8. 主循环
+    # 5. 主循环
     while not rospy.is_shutdown():
         chosen_waypoint = np.zeros(4)
 
