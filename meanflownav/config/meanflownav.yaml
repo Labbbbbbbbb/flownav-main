@@ -1,6 +1,6 @@
-project_name: meanflownav
-entity: zyt115200-harbin-institute-of-technology
-run_name: meanflownav
+project_name: flownav
+entity: <YOUR ENTITY>
+run_name: flownav
 
 # training setup
 use_wandb: True #True
@@ -44,7 +44,7 @@ depth:
   pool_dim: 64
   out_dim:
     vits: 384
-  weights_path: /media/zhanyt/Data/Zytisworking/flownav-main/weights/depth_anything_v2_vits.pth
+  weights_path: /path/to/weights/depth_anything_v2_vits.pth
 
 
 # mask
@@ -87,33 +87,33 @@ meanflow:
 image_size: [96, 96]
 datasets:
    recon:
-    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/recon
-    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/recon/train/ # path to train folder with traj_names.txt
-    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/recon/test/ # path to test folder with traj_names.txt
+    data_folder: /path/to/Datasets/nomad_dataset/recon
+    train: /path/to/Datasets/data_splits/recon/train/ # path to train folder with traj_names.txt
+    test: /path/to/Datasets/data_splits/recon/test/ # path to test folder with traj_names.txt
     end_slack: 3 # because many trajectories end in collisions
     goals_per_obs: 1 # how many goals are sampled per observation
     negative_mining: True # negative mining from the ViNG paper (Shah et al.)
     waypoint_spacing: 1
    custom:
-    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/custom_4_29
-    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29/train/ # path to train folder with traj_names.txt
-    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29/test/ # path to test folder with traj_names.txt
+    data_folder: /path/to/Datasets/nomad_dataset/custom_4_29
+    train: /path/to/Datasets/data_splits/custom_4_29/train/ # path to train folder with traj_names.txt
+    test: /path/to/Datasets/data_splits/custom_4_29/test/ # path to test folder with traj_names.txt
     end_slack: 3
     goals_per_obs: 2 # increase dataset size
     negative_mining: True
     waypoint_spacing: 1
    custom_05_23:
-    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/custom_05_23
-    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_05_23/train/ # path to train folder with traj_names.txt
-    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_05_23/test/ # path to test folder with traj_names.txt
+    data_folder: /path/to/Datasets/nomad_dataset/custom_05_23
+    train: /path/to/Datasets/data_splits/custom_05_23/train/ # path to train folder with traj_names.txt
+    test: /path/to/Datasets/data_splits/custom_05_23/test/ # path to test folder with traj_names.txt
     end_slack: 3
     goals_per_obs: 2 # increase dataset size
     negative_mining: True
     waypoint_spacing: 1
    huron:
-    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/huron
-    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/huron/train/ # path to train folder with traj_names.txt
-    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/huron/test/ # path to test folder with traj_names.txt
+    data_folder: /path/to/Datasets/nomad_dataset/huron
+    train: /path/to/Datasets/data_splits/huron/train/ # path to train folder with traj_names.txt
+    test: /path/to/Datasets/data_splits/huron/test/ # path to test folder with traj_names.txt
     end_slack: 3
     goals_per_obs: 1 # increase dataset size
     negative_mining: True
@@ -127,27 +127,3 @@ pairwise_test_freq: 0
 eval_fraction: 0.25
 wandb_log_freq: 10
 eval_freq: 1
-
-#load_run: /media/zhanyt/ZY/Datasets/flownav-main/logs/meanflownav/meanflownav_2026_04_11_18_06_16/latest.pth
-#load_run: /media/zhanyt/ZY/Datasets/flownav-main/logs/meanflownav/meanflownav_2026_04_11_23_14_32/latest.pth
-
-#load_run: /media/zhanyt/ZY/Datasets/flownav-main/logs/meanflownav/meanflownav_2026_04_13_14_41_11/latest.pth
-#load_run: /media/zhanyt/ZY/Datasets/flownav-main/logs/meanflownav/meanflownav_2026_04_13_15_02_47/latest.pth
-
-
-#load_run: /media/zhanyt/ZY/Datasets/flownav-main/logs/meanflownav/meanflownav_2026_04_15_13_50_04/latest.pth  #含两个数据集
-# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_04_15_20_23_25/latest.pth   #在上面的基础上又在custom上训练了一轮
-# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_04_30_00_32_36/latest.pth #在上面的基础上又在custom_4_29上训练了一轮
-# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_07_23_47_24/latest.pth #在上面的基础上又在custom_4_29_lab上训练了一轮
-# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_09_20_40_22/latest.pth #从头开始在custom_4_29+recon上训练了2epochs
-
-# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_10_17_28_56/latest.pth #在0509的基础上在lab上训练了一整轮
-# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_19_22_16_31/latest.pth #在0509的基础上又在custom_4_29_hallway上训练了一轮
-
-
-# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_21_11_45_23/latest.pth #waypoint_spacing从0.014改为0.25重新训练到了epoch4  *
-# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_21_15_52_50/latest.pth #在上面的基础上又训练了一轮
-# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_21_16_38_30/latest.pth # waypoint_spacing从0.014改为0.1 两个epoch
-# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_21_18_56_15/latest.pth # 在上面的基础上又训练了一轮
-
-# load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/meanflownav/meanflownav_2026_05_24_00_36_12/1.pth

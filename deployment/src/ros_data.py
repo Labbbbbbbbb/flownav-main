@@ -109,11 +109,6 @@ class ROSData:
             new_arr[:k] = fitted
         except Exception:
             pass
-            # 若最小二乘失败，回退到线性融合  #  理论上不应该线性融合
-            # for i in range(k):
-            #     alpha = float(i + 1) / float(k + 1)
-            #     new_arr[i] = (1.0 - alpha) * old_tail[i] + alpha * new_arr[i]
-
         return new_arr.tolist()
     
     def set(self, data):        #self.queue_size=8!!!
@@ -143,9 +138,9 @@ class ROSData:
     def is_valid(self, verbose: bool = False):
         time_waited = rospy.get_time() - self.last_time_received
         valid =  time_waited < self.timout
-        # if self.queue_size > 1: #self.queue_size=8!!!
+        # if self.queue_size > 1:  #ps.self.queue_size=8
         #     valid = valid and  self.current_waypoint_index < len(self.data)
-        # else:   #self.queue_size=8!!!
+        # else:  
         #     valid = valid and (self.data is not None)
         if verbose and not valid:
             print(f"Not receiving {self.name} data for {time_waited} seconds (timeout: {self.timout} seconds)")

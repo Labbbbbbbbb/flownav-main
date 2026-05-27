@@ -231,9 +231,7 @@ def callback_fitted(waypoint_msg: Float32MultiArray):
     """Callback function for the waypoint subscriber"""
     global fitted_waypoints
     data = np.asarray(waypoint_msg.data, dtype=np.float32)
-    # Expect flattened trajectory: [x1,y1, x2,y2, ...] (or with extra heading values)
     if data.size == 0:
-        # print("[CALLBACK] 收到空 waypoint 数据")
         return
 
     # Try to reshape to Nx2 (prefer), fallback to Nx4 then take first 2 cols
@@ -259,7 +257,6 @@ def callback_fitted(waypoint_msg: Float32MultiArray):
         pts = pts[:N_TARGET]
 
     fitted_waypoints = pts.astype(np.float32)
-    # print(f"[CALLBACK] 收到整条平滑 waypoint，点数={pts.shape[0]}, dtype={fitted_waypoints.dtype}")
 
 @staticmethod
 def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
@@ -320,12 +317,8 @@ def main(args):
     goal_node = len(topomap) - 1 if args.goal_node == -1 else args.goal_node
     sg_idx=0
     start=0
-    # 4. Scorer初始化
-    Trajprojector = TrajectoryProjector(dataset_name="deploy")
-    Scorer=VLMTrajectoryScorer()
     
-    
-    # 5. ROS 1 节点初始化
+    # 4. ROS 1 节点初始化
     rospy.init_node("MEANFLOW_NAVIGATION", anonymous=False)
     rospy.Subscriber(IMAGE_TOPIC, Image, callback_obs, queue_size=1)
     waypoint_pub = rospy.Publisher(WAYPOINT_TOPIC, Float32MultiArray, queue_size=1)
@@ -337,14 +330,14 @@ def main(args):
     print(f"[*] ROS 1 节点就绪。等待图像话题: {IMAGE_TOPIC}")
     annotated_image_msg = None
 
-    # 6. 主循环
+    # 5. 主循环
     while not rospy.is_shutdown():
         waypoint_sequence = np.zeros((8, 2))  # 初始化 8 个 2D waypoint
 
         if len(context_queue) > context_size:
             # 预处理观测图像
             obs_images = transform_images(context_queue, model_params["image_size"], center_crop=False)
-            obs_images = torch.split(obs_images, 3, dim=1)  #因为拼接是在通道维度上，所以这里按3在dim=1上分割
+            obs_images = torch.split(obs_images, 3, dim=1)  
             obs_images = torch.cat(obs_images, dim=1).to(device)
             mask = torch.zeros(1).long().to(device)
 
@@ -394,19 +387,6 @@ def main(args):
                 t_select_end = time.perf_counter()
                 timeline["select_ms"] = (t_select_end - t_select_start) * 1000.0
 
-                # sampling / one-step MeanFlow
-                # t_sample_start = time.perf_counter()
-                # noisy_action = torch.randn((args.num_samples, model_params["len_traj_pred"], 2), device=device)
-                # t = torch.ones(noisy_action.shape[0], device=device)
-                # h = torch.ones(noisy_action.shape[0], device=device)
-                # t_noise_start = time.perf_counter()
-                # u = model.noise_pred_net(sample=noisy_action, timestep=t, stoptime=h, global_cond=obs_cond)
-                # t_noise_end = time.perf_counter()
-                # traj = noisy_action - u
-                # naction = to_numpy(get_action(traj))
-                # t_sample_end = time.perf_counter()
-                # timeline["noise_pred_ms"] = (t_noise_end - t_noise_start) * 1000.0
-                # timeline["sampling_ms"] = (t_sample_end - t_sample_start) * 1000.0
 
                 # sampleing / k-step MeanFlow
                 k_steps = max(1, int(args.k_steps))
@@ -422,7 +402,7 @@ def main(args):
                     h = torch.full((x.shape[0],), dt, device=device)
                     u = model.noise_pred_net(sample=x, timestep=t, stoptime=h, global_cond=obs_cond)
                     # Treat the network output as the learned displacement over the current interval.
-                    x = x - u*dt #?
+                    x = x - u*dt 
                 t_noise_end = time.perf_counter()
                 traj = x
                 naction = to_numpy(get_action(traj))
@@ -448,11 +428,6 @@ def main(args):
                 print("[TIMELINE] ", json.dumps(timeline, ensure_ascii=False))
                 
                 
-                
-           
-                # 选择分数最高的轨迹对应的 waypoint 作为输出
-                # chosen_waypoint = naction[best_idx][args.waypoint]
-                
                 # 发布前 8 个 waypoint：每个点单独发一条消息，供 ROSData 维护历史队列
                 waypoint_sequence = naction[0][:8]  # 取前 8 步作为 waypoint 序列
                 if len(waypoint_sequence) < 8:
@@ -475,14 +450,13 @@ def main(args):
             overlay_pub.publish(annotated_image_msg) # 发布带注释的图像到 ROS 话题
         
         # 检查是否到达终点
-        reached_goal = ((closest_node == goal_node or sg_idx+start==goal_node) and min_dist<10)
+        reached_goal = (closest_node == goal_node and min_dist<10)
         goal_pub.publish(reached_goal)
         if reached_goal:
             print("[!] 到达终点！")
 
         ros_rate.sleep()
 
-    # visualizer.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

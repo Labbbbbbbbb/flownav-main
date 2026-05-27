@@ -48,37 +48,6 @@ def get_delta(actions: np.ndarray) -> np.ndarray:
     return delta
 
 
-def fit_bspline_waypoints(waypoints: np.ndarray, sample_multiplier: int = BSPLINE_SAMPLE_MULTIPLIER) -> np.ndarray:
-	"""Fit a B-spline through waypoints and resample a denser trajectory."""
-	pts = np.asarray(waypoints, dtype=np.float32)
-	if pts.ndim != 2 or pts.shape[0] < 3:
-		return pts
-
-	num_samples = max(int(pts.shape[0] * sample_multiplier), pts.shape[0])
-	num_samples = max(num_samples, 2)
-	curve_dim = pts.shape[1]
-	k = min(3, pts.shape[0] - 1)
-
-	try:
-		diffs = np.diff(pts[:, :2], axis=0)
-		distances = np.linalg.norm(diffs, axis=1)
-		u = np.concatenate(([0.0], np.cumsum(distances)))
-		if u[-1] < EPS:
-			return np.repeat(pts[:1], num_samples, axis=0)
-		u = u / u[-1]		#u[-1]是把每一步的distance模长加在一起
-		coords = [pts[:, dim] for dim in range(curve_dim)]
-		tck, _ = splprep(coords, u=u, s=0.0, k=k)
-		sample_u = np.linspace(0.0, 1.0, num_samples)
-		sampled = np.asarray(splev(sample_u, tck), dtype=np.float32).T
-		return sampled
-	except Exception:
-		sample_u = np.linspace(0.0, 1.0, num_samples)
-		t_src = np.linspace(0.0, 1.0, pts.shape[0])
-		resampled = np.column_stack([
-			np.interp(sample_u, t_src, pts[:, dim]) for dim in range(curve_dim)
-		]).astype(np.float32)
-		return resampled
-
 
 def clip_angle(theta) -> float:
 	"""Clip angle to [-pi, pi]"""
@@ -186,21 +155,10 @@ def main():
 					vel_out.publish(vel_msg)
 					continue
 				
-				# with no B-spline, directly compute delta_waypoint from raw waypoints
 				delta_waypoint=get_delta(np.asarray(waypoints).reshape(1, -1, waypoints.shape[-1])).squeeze()	# 计算相邻waypoint之间的差值，得到每个waypoint相对于前一个waypoint的增量
 				cur_waypoint_elasped_time = (rospy.get_time() - waypoint.last_time_received ) * 1000.0	#单位ms
 				waypoint.current_waypoint_index= int(int(cur_waypoint_elasped_time //150))	#每200ms切换到下一个waypoint，待调整
 
-				
-				# B-spline
-				# smoothed_waypoints = fit_bspline_waypoints(waypoints)
-				# delta_waypoint = np.diff(smoothed_waypoints, axis=0, prepend=smoothed_waypoints[:1])
-				# cur_waypoint_elasped_time = (rospy.get_time() - waypoint.last_time_received ) * 1000.0	#单位ms
-				# sample_interval_ms = BASE_WAYPOINT_INTERVAL_MS * len(waypoints) / float(len(smoothed_waypoints))
-				# waypoint.current_waypoint_index= int(cur_waypoint_elasped_time // sample_interval_ms)	# 按样条密采样后的时间步长切换
-				
-	
-				print("[DEBUG] cur_waypoint_elasped_time: {:.2f}ms, current_waypoint_index: {}".format(cur_waypoint_elasped_time, waypoint.current_waypoint_index))
 				waypoint.current_waypoint_index=min(waypoint.current_waypoint_index, len(delta_waypoint) - 1)
 				current_wp = delta_waypoint[waypoint.current_waypoint_index]
 
@@ -215,7 +173,6 @@ def main():
 			vel_out.publish(vel_msg)
 			waypoint_msg = Float32MultiArray()
 			waypoint_msg.data = waypoints.astype(np.float32).reshape(-1).tolist()
-			# waypoint_msg.data = smoothed_waypoints.astype(np.float32).reshape(-1).tolist() # Bspline
 			fitted_waypoint_pub.publish(waypoint_msg)
 			rate.sleep()
 	except KeyboardInterrupt:

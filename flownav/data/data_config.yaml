@@ -4,9 +4,6 @@
 action_stats:
   min: [-2.5, -4] # [min_dx, min_dy] 原：[-2.5, -4]
   max: [5, 4] # [max_dx, max_dy] 原：[5, 4]
-# action_stats:
-#   min: [-1, -1] # [min_dx, min_dy]
-#   max: [1, 1] # [max_dx, max_dy]
 
 # data specific params
 recon:
@@ -22,8 +19,7 @@ go_stanford:
   metric_waypoint_spacing: 0.12
 
 custom:
-  metric_waypoint_spacing: 0.03 #相邻帧之间的距离，单位为米 0.2/15=0.014
-  # metric_waypoint_spacing: 0.014 #相邻帧之间的距离，单位为米 0.2/15=0.014
+  metric_waypoint_spacing: 0.03 
 
 huron:
   metric_waypoint_spacing: 0.2
