@@ -184,7 +184,7 @@ def train(
                 )
 
             # Total loss
-            total_loss = alpha * dist_loss + (1 - alpha) * (flow_loss + aux_flow_loss)  #0.1*aux_flow_loss
+            total_loss = alpha * dist_loss + (1 - alpha) * (flow_loss + aux_flow_loss)  
 
             # Optimize
             optimizer.zero_grad()
@@ -245,37 +245,6 @@ def train(
                         f"[viz-debug] distance min/max=({distance.min().item():.4f}, {distance.max().item():.4f}) "
                         f"mean/std=({distance.mean().item():.4f}, {distance.std().item():.4f})"
                     )
-                # visualize_action_distribution(
-                #     ema_model=ema_model,
-                #     batch_obs_images=batch_obs_images,
-                #     batch_goal_images=batch_goal_images,
-                #     batch_viz_obs_images=batch_viz_obs_images,
-                #     batch_viz_goal_images=batch_viz_goal_images,
-                #     batch_action_label=actions,
-                #     batch_distance_labels=distance,
-                #     batch_goal_pos=goal_pos,
-                #     device=device,
-                #     eval_type="train",
-                #     project_folder=project_folder,
-                #     epoch=epoch,
-                #     num_images_log=num_images_log,
-                #     num_samples=4,
-                #     use_wandb=use_wandb,
-                # )
-                # visualize_flow_stage_distribution(
-                #     ema_model=ema_model,
-                #     batch_obs_images=batch_obs_images,
-                #     batch_goal_images=batch_goal_images,
-                #     batch_action_label=actions,
-                #     device=device,
-                #     eval_type="train",
-                #     project_folder=project_folder,
-                #     epoch=epoch,
-                #     num_images_log=num_images_log,
-                #     num_samples=4,
-                #     use_wandb=use_wandb,
-                # )       
-
 
 
 
