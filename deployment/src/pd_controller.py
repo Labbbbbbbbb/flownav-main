@@ -1,32 +1,30 @@
 import numpy as np
 import yaml
+import signal
 from typing import Tuple
-import pdb
 
-# ROS2
-import rclpy
-from rclpy.node import Node
+# ROS
+import rospy
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32MultiArray, Bool
-from rclpy.qos import QoSProfile
-from rclpy.qos import QoSReliabilityPolicy, QoSHistoryPolicy
 
-from topic_names import WAYPOINT_TOPIC, REACHED_GOAL_TOPIC, VEL_TOPIC
+from topic_names import (WAYPOINT_TOPIC, 
+			 			REACHED_GOAL_TOPIC)
 from ros_data import ROSData
-from utils import clip_angle 
+from utils import clip_angle
 
 # CONSTS
-# CONFIG_PATH = "../config/robot.yaml"
-CONFIG_PATH = "../../config/robot.yaml"
+CONFIG_PATH = "../config/robot.yaml"
 with open(CONFIG_PATH, "r") as f:
-    robot_config = yaml.safe_load(f)
+	robot_config = yaml.safe_load(f)
 MAX_V = robot_config["max_v"]
 MAX_W = robot_config["max_w"]
-DT = 1 / robot_config["frame_rate"]
-RATE = 15
+VEL_TOPIC = robot_config["vel_navi_topic"]
+DT = 1/robot_config["frame_rate"]
+RATE = 9
 EPS = 1e-8
-WAYPOINT_TIMEOUT = 1  # seconds
-FLIP_ANG_VEL = np.pi / 4
+WAYPOINT_TIMEOUT = 1 # seconds # TODO: tune this
+FLIP_ANG_VEL = np.pi/4
 
 # GLOBALS
 vel_msg = Twist()
@@ -34,98 +32,111 @@ waypoint = ROSData(WAYPOINT_TIMEOUT, name="waypoint")
 reached_goal = False
 reverse_mode = False
 current_yaw = None
+vel_out = None
+shutdown_requested = False
 
 def clip_angle(theta) -> float:
-    """Clip angle to [-pi, pi]"""
-    theta %= 2 * np.pi
-    if -np.pi < theta < np.pi:
-        return theta
-    return theta - 2 * np.pi
+	"""Clip angle to [-pi, pi]"""
+	theta %= 2 * np.pi
+	if -np.pi < theta < np.pi:
+		return theta
+	return theta - 2 * np.pi
+      
 
 def pd_controller(waypoint: np.ndarray) -> Tuple[float]:
-    """PD controller for the robot"""
+	"""PD controller for the robot"""
+	assert len(waypoint) == 2 or len(waypoint) == 4, "waypoint must be a 2D or 4D vector"
+	if len(waypoint) == 2:
+		dx, dy = waypoint
+	else:
+		dx, dy, hx, hy = waypoint
+	# this controller only uses the predicted heading if dx and dy near zero
+	if len(waypoint) == 4 and np.abs(dx) < EPS and np.abs(dy) < EPS:
+		v = 0
+		w = clip_angle(np.arctan2(hy, hx))/DT		
+	elif np.abs(dx) < EPS:
+		v =  0
+		w = np.sign(dy) * np.pi/(2*DT)
+	else:
+		v = dx / DT
+		w = np.arctan(dy/dx) / DT
+	v = np.clip(v, 0, MAX_V)
+	w = np.clip(w, -MAX_W, MAX_W)
+	return v, w
 
-    # if waypoint[0] != 0.0:
-    #     pdb.set_trace()
-    assert len(waypoint) == 2 or len(waypoint) == 4, "waypoint must be a 2D or 4D vector"
-    if len(waypoint) == 2:
-        dx, dy = waypoint
-    else:
-        dx, dy, hx, hy = waypoint
-    # this controller only uses the predicted heading if dx and dy are near zero
-    if len(waypoint) == 4 and np.abs(dx) < EPS and np.abs(dy) < EPS:
-        v = 0
-        w = clip_angle(np.arctan2(hy, hx)) / DT
-    elif np.abs(dx) < EPS:
-        v = 0
-        w = np.sign(dy) * np.pi / (2 * DT)
-    else:
-        v = dx / DT
-        w = np.arctan(dy / dx) / DT
-    v = np.clip(v, 0, MAX_V)
-    w = np.clip(w, -MAX_W, MAX_W)
-    return v, w
 
-class PDControllerNode(Node):
-    def __init__(self):
-        super().__init__("pd_controller")
-        self.vel_msg = Twist()
-        self.waypoint = ROSData(WAYPOINT_TIMEOUT, name="waypoint")
-        self.reached_goal = False
-        self.reverse_mode = False
+def callback_drive(waypoint_msg: Float32MultiArray):
+	"""Callback function for the waypoint subscriber"""
+	global vel_msg
+	print("seting waypoint")
+	waypoint.set(waypoint_msg.data)
+	
+	
+def callback_reached_goal(reached_goal_msg: Bool):
+	"""Callback function for the reached goal subscriber"""
+	global reached_goal
+	reached_goal = reached_goal_msg.data
 
-        self.waypoint_sub = self.create_subscription(Float32MultiArray, 
-                                                     WAYPOINT_TOPIC, 
-                                                     self.callback_drive, 
-                                                     qos_profile = QoSProfile(reliability=QoSReliabilityPolicy.RELIABLE,
-                                                                              history=QoSHistoryPolicy.KEEP_LAST,
-                                                                              depth=10))
-        self.reached_goal_sub = self.create_subscription(Bool, 
-                                                         REACHED_GOAL_TOPIC, 
-                                                         self.callback_reached_goal, 
-                                                         10)
-        self.vel_out = self.create_publisher(Twist, 
-                                             VEL_TOPIC,
-                                             10)
 
-        self.timer = self.create_timer(1.0 / RATE, self.timer_callback)
-        self.get_logger().info("Registered with master node. Waiting for waypoints...")
+def publish_zero_velocity(vel_out):
+	"""Publish a zero velocity command to stop the robot."""
+	if vel_out is None:
+		return
+	zero_vel_msg = Twist()
+	for _ in range(3):
+		vel_out.publish(zero_vel_msg)
+		rospy.sleep(0.05)
 
-    def callback_drive(self, waypoint_msg: Float32MultiArray):
-        """Callback function for the waypoint subscriber"""
-        self.get_logger().info("Setting waypoint")
-        self.waypoint.set(waypoint_msg.data)
 
-    def callback_reached_goal(self, reached_goal_msg: Bool):
-        """Callback function for the reached goal subscriber"""
-        self.reached_goal = reached_goal_msg.data
+def stop_robot(reason: str):
+	"""Publish zero velocity once before shutting down."""
+	global shutdown_requested
+	if shutdown_requested:
+		return
+	shutdown_requested = True
+	print(reason)
+	publish_zero_velocity(vel_out)
 
-    def timer_callback(self):
-        if self.reached_goal:
-            self.vel_out.publish(self.vel_msg)
-            self.get_logger().info("Reached goal! Stopping...")
-            rclpy.shutdown()
-            return
-        
-        if self.waypoint.is_valid(verbose=True):
-            v, w = pd_controller(self.waypoint.get())
-            if self.reverse_mode:
-                v *= -1
-            self.vel_msg.linear.x = v
-            self.vel_msg.angular.z = w
-            self.get_logger().info(f"Publishing new velocity: {v}, {w}")
-        self.vel_out.publish(self.vel_msg)
+
+def handle_sigint(signum, frame):
+	stop_robot("KeyboardInterrupt received, publishing zero velocity and stopping...")
+	rospy.signal_shutdown("SIGINT")
+
 
 def main():
-    rclpy.init()
-    pd_controller_node = PDControllerNode()
-    try:
-        rclpy.spin(pd_controller_node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        pd_controller_node.destroy_node()
-        rclpy.shutdown()
+	global vel_msg, reverse_mode, vel_out
+	rospy.init_node("PD_CONTROLLER", anonymous=False, disable_signals=True)
+	waypoint_sub = rospy.Subscriber(WAYPOINT_TOPIC, Float32MultiArray, callback_drive, queue_size=1)
+	reached_goal_sub = rospy.Subscriber(REACHED_GOAL_TOPIC, Bool, callback_reached_goal, queue_size=1)
+	vel_out = rospy.Publisher(VEL_TOPIC, Twist, queue_size=1)
+	signal.signal(signal.SIGINT, handle_sigint)
+	signal.signal(signal.SIGTERM, handle_sigint)
+	rospy.on_shutdown(lambda: publish_zero_velocity(vel_out))
+	rate = rospy.Rate(RATE)
+	print("Registered with master node. Waiting for waypoints...")
+	try:
+		while not rospy.is_shutdown():
+			vel_msg = Twist()
+			if reached_goal:
+				vel_out.publish(vel_msg)
+				print("Reached goal! Stopping...")
+				return
+			elif waypoint.is_valid(verbose=True):
+				v, w = pd_controller(waypoint.get())
+				if reverse_mode:
+					v *= -1
+				vel_msg.linear.x = v
+				vel_msg.angular.z = w
+				print(f"publishing new vel: {v}, {w}")
+			vel_out.publish(vel_msg)
+			rate.sleep()
+	except KeyboardInterrupt:
+		stop_robot("KeyboardInterrupt received, publishing zero velocity and stopping...")
+		rospy.signal_shutdown("KeyboardInterrupt")
+	finally:
+		stop_robot("publishing zero velocity and stopping...")
+
+	
 
 if __name__ == '__main__':
-    main()
+	main()

@@ -1,6 +1,9 @@
-# linear and angular speed limits for the robot
-max_v: 6.0 # m/s
-max_w: 6.0 # rad/s
+# ~/flownav-main/deployment/config/robot.yaml
 
-# observation rate fo the robot
-frame_rate: 15 # Hz
+# 基础运动参数
+max_v: 0.12            # 最大线速度 (根据你的 Scout 实际能力调整)
+max_w: 0.15           # 最大角速度
+frame_rate: 15        # 频率
+
+# 话题名称适配
+vel_navi_topic: "/cmd_vel"  # 添加这一行，确保与 pd_controller.py 里的 KeyError 对应

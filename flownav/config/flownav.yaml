@@ -76,22 +76,22 @@ learn_angle: False
 image_size: [96, 96] # width, height
 
 datasets:
-   recon:
-    data_folder: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/nomad_dataset/recon
-    train: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/data_splits/recon/train/ # path to train folder with traj_names.txt
-    test: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/data_splits/recon/test/ # path to test folder with traj_names.txt
-    end_slack: 3 # because many trajectories end in collisions
-    goals_per_obs: 1 # how many goals are sampled per observation
-    negative_mining: True # negative mining from the ViNG paper (Shah et al.)
+  #  recon:
+  #   data_folder: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/nomad_dataset/recon
+  #   train: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/data_splits/recon/train/ # path to train folder with traj_names.txt
+  #   test: /media/zhanyt/Data/Zytisworking/flownav-main/DataSet/data_splits/recon/test/ # path to test folder with traj_names.txt
+  #   end_slack: 3 # because many trajectories end in collisions
+  #   goals_per_obs: 1 # how many goals are sampled per observation
+  #   negative_mining: True # negative mining from the ViNG paper (Shah et al.)
+  #   waypoint_spacing: 1
+   custom:
+    data_folder: /media/zhanyt/ZY/Datasets/flownav_data/nomad_dataset/custom_4_29_lab
+    train: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29_lab/train/ # path to train folder with traj_names.txt
+    test: /media/zhanyt/ZY/Datasets/flownav_data/data_splits/custom_4_29_lab/test/ # path to test folder with traj_names.txt
+    end_slack: 3
+    goals_per_obs: 2 # increase dataset size
+    negative_mining: True
     waypoint_spacing: 1
-#   go_stanford:
-#     data_folder: /home/<username>/nomad_dataset/go_stanford_cropped # datasets/stanford_go_new
-#     train: /home/<username>/data_splits/go_stanford/train/
-#     test: /home/<username>/data_splits/go_stanford/test/
-#     end_slack: 0
-#     goals_per_obs: 2 # increase dataset size
-#     negative_mining: True
-#     waypoint_spacing: 1
 #   cory_hall:
 #     data_folder: /home/<username>/nomad_dataset/cory_hall/
 #     train: /home/<username>/data_splits/cory_hall/train/
@@ -120,11 +120,12 @@ datasets:
 # logging stuff
 ## =0 turns off
 print_log_freq: 500 # in iterations
-image_log_freq: 1000 #0 # in iterations
+image_log_freq: 1000 #1000 # in iterations
 num_images_log: 8 #0 
 pairwise_test_freq: 0 # in epochs
 eval_fraction: 0.25
 wandb_log_freq: 10 # in iterations
 eval_freq: 1 # in epochs
 
-load_run: /media/zhanyt/Data/Zytisworking/flownav-main/weights/flownav_weights.pth
+#load_run: /media/zhanyt/Data/Zytisworking/flownav-main/weights/flownav_weights.pth
+#load_run: /media/zhanyt/Data/Zytisworking/flownav-main/logs/flownav/flownav_2026_04_11_13_17_02/4.pth

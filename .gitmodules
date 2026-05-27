@@ -1,0 +1,6 @@
+[submodule "py-meanflow"]
+	path = py-meanflow
+	url = https://github.com/Gsunshine/py-meanflow.git
+[submodule "consistency-policy"]
+	path = consistency-policy
+	url = https://github.com/Aaditya-Prasad/consistency-policy.git

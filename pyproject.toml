@@ -7,7 +7,7 @@ authors = [
     {name = "Abhijeet Nayak", email = "abhijeet.nayak@utn.de"},
     {name = "Debora Oliveira", email = "debora.oliveira@utn.de"},
 ]
-dependencies = ["click>=8.2.1", "numpy==1.*", "torch>=2.7.1", "warmup-scheduler>=0.3", "torchvision>=0.22.1", "efficientnet-pytorch>=0.7.1", "torchcfm>=1.0.7", "wandb>=0.21.1", "diffusers==0.11.1", "diffusion-policy @ git+http://github.com/debOliveira/diffusion_policy.git@main", "einops>=0.8.1", "lmdb>=1.7.3", "depth-anything-v2 @ git+http://@github.com/debOliveira/depth-anything-V2.git@main", "huggingface-hub==0.25.2"]
+dependencies = ["click>=8.2.1", "numpy==1.*", "torch>=2.7.1", "warmup-scheduler>=0.3", "torchvision>=0.22.1", "efficientnet-pytorch>=0.7.1", "torchcfm>=1.0.7", "wandb>=0.21.1", "diffusers==0.11.1", "diffusion-policy @ git+http://github.com/debOliveira/diffusion_policy.git@main", "einops>=0.8.1", "lmdb>=1.7.3", "depth-anything-v2 @ git+http://github.com/debOliveira/depth-anything-V2.git@main", "huggingface-hub==0.25.2"]
 requires-python = ">=3.10"
 readme = "README.md"
 license = {text = "MIT"}

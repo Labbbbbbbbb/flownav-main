@@ -1,20 +1,15 @@
-# topic names for ROS communication
 
+# 图像观测话题 (来自你的 Realsense)
+IMAGE_TOPIC = "/camera/color/image_raw"
 
-# Robot name space to append to all topics
-# Change this to match your robot's namespace
-# For example, if your robot is named "turtle1", you can set it to "/turtle1"
-#ROBOT_NAMESPACE = "/turtle1"    
-ROBOT_NAMESPACE = ""   #zyt 
+# 导航相关话题
+WAYPOINT_TOPIC = "/waypoint"
+REACHED_GOAL_TOPIC = "/topoplan/reached_goal"
+SAMPLED_ACTIONS_TOPIC = "/sampled_actions"
 
-# Image observation topics
-#IMAGE_TOPIC = f"{ROBOT_NAMESPACE}/image_compressed"
-IMAGE_TOPIC = f"{ROBOT_NAMESPACE}/oakd/rgb/preview/image_raw"  #zyt
-# exploration topics
-WAYPOINT_TOPIC = f"{ROBOT_NAMESPACE}/waypoint"
-REACHED_GOAL_TOPIC = f"{ROBOT_NAMESPACE}/topoplan/reached_goal"
-SAMPLED_ACTIONS_TOPIC = f"{ROBOT_NAMESPACE}/sampled_actions"
+# 控制话题 (Scout 机器人底盘接收的话题)
+# 注意：请确认你的 Scout 底盘驱动监听的是 /cmd_vel 还是 /scout/cmd_vel
+VEL_TOPIC = "/cmd_vel" 
 
-# move the robot
-VEL_TOPIC = f"{ROBOT_NAMESPACE}/cmd_vel"
-#VEL_TOPIC = "/diffdrive_controller/cmd_vel_unstamped"  #zyt, for turtlebot4  这俩都可以好像，但是都是刚开始不知道为啥很长一段时间不动，后面突然蹭一下,并且第二个超级慢
+# 其他辅助话题 (保持与 NoMaD 一致，方便调试)
+SAMPLED_OUTPUTS_TOPIC = "/sampled_outputs"

@@ -125,6 +125,7 @@ celerybeat.pid
 
 # Environments
 .env
+env
 .venv
 env/
 venv/
@@ -155,6 +156,6 @@ deployment/src/test/*
 deployment/src/explore_topomap/*
 conditional-flow-matching/
 DataSet/
-wandb/ 
- 
- 
+recon_datavis/
+wandb/
+deploy_cli.sh

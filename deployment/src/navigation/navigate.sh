@@ -17,8 +17,7 @@ tmux select-pane -t 0
 # Enabling Discovery Server mode creates this file 
 tmux send-keys "source /etc/turtlebot4/setup.bash" Enter
 # Source venv
-tmux send-keys "source ../../../.venv/bin/activate" Enter  #zyt
-tmux send-keys "export PYTHONPATH=/media/zhanyt/Data/Zytisworking/flownav-main/deployment/src:$PYTHONPATH" Enter #zyt
+tmux send-keys "source .venv/bin/activate" Enter
 tmux send-keys "python navigate.py $@" Enter
 
 
@@ -27,8 +26,7 @@ tmux select-pane -t 1
 # Enabling Discovery Server mode creates this file 
 tmux send-keys "source /etc/turtlebot4/setup.bash" Enter
 # Source venv
-tmux send-keys "export PYTHONPATH=/media/zhanyt/Data/Zytisworking/flownav-main/deployment/src:$PYTHONPATH" Enter #zyt
-tmux send-keys "source ../../../.venv/bin/activate" Enter  #zyt
+tmux send-keys "source .venv/bin/activate" Enter
 tmux send-keys "python ../pd_controller.py" Enter
 
 # Attach to the tmux session
