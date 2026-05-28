@@ -222,6 +222,7 @@ def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
     return msg
 
 def save_images_and_actions():
+    global im_idx
     if cur_img is not None and cur_naction is not None:
         print(f"Saving Image and action {im_idx}")
         cur_img.save(f"{cur_exp_im_dir}/{im_idx}.png")
@@ -293,9 +294,7 @@ def main(args):
     print("Waiting for images...")
 
 
-    closest_node = 0
-    im_idx = 0
-    
+    closest_node = 0    
 
     
     # 5. ROS 1 节点初始化
