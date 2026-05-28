@@ -25,11 +25,6 @@ import torchdiffeq
 from flownav.training.utils import get_action
 from utils import to_numpy, transform_images, load_model, remove_files_in_dir, msg_to_pil
 
-
-# Flow_Correct /VLM Scorer 组件
-from reward.flow_correct import TrajectoryProjector
-from reward.vlm_trajectory_scorer import VLMTrajectoryScorer
-
 # Ros Topics
 from topic_names import (IMAGE_TOPIC,
                         WAYPOINT_TOPIC,
@@ -60,7 +55,7 @@ context_queue = []
 obs_img = None
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 obs_cnt=0
-
+im_idx=0
 
 def tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> np.ndarray:
     """Convert a normalized CHW tensor back to an RGB uint8 image for visualization."""
@@ -227,6 +222,7 @@ def msg_from_numpy(rgb: np.ndarray, stamp=None, frame_id="camera"):
     return msg
 
 def save_images_and_actions():
+    global im_idx
     if cur_img is not None and cur_naction is not None:
         print(f"Saving Image and action {im_idx}")
         cur_img.save(f"{cur_exp_im_dir}/{im_idx}.png")
