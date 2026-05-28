@@ -25,9 +25,6 @@ import torchdiffeq
 from flownav.training.utils import get_action
 from utils import to_numpy, transform_images, load_model, msg_to_pil
 
-# Flow_Correct /VLM Scorer 组件
-from reward.flow_correct import TrajectoryProjector
-from reward.vlm_trajectory_scorer import VLMTrajectoryScorer
 import matplotlib.pyplot as plt
 ACTION_STATS = {
     'min': np.array([-2.5, -4]),
